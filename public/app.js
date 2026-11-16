@@ -1,5 +1,7 @@
 'use strict';
 
+const TIMELINE_MODE_KEY = 'relaydock.timelineMode';
+
 const state = {
   token: null,
   workspace: null,
@@ -12,13 +14,14 @@ const state = {
   diff: null,
   tab: 'checkpoint',
   modalMode: null,
-  busy: false
+  busy: false,
+  timelineMode: localStorage.getItem(TIMELINE_MODE_KEY) === 'chat' ? 'chat' : 'full'
 };
 
 const elements = {};
 for (const id of [
   'healthBadge', 'workspaceLabel', 'refreshButton', 'importCodexButton', 'newSessionButton', 'sessionList',
-  'addProviderButton', 'providerList', 'activeTitle', 'activeMeta', 'leaseBadge', 'approvalCount',
+  'addProviderButton', 'providerList', 'activeTitle', 'activeMeta', 'timelineModeSwitch', 'leaseBadge', 'approvalCount',
   'contractButton', 'timeline', 'providerSelect', 'composerText', 'checkpointButton', 'packetButton',
   'exportButton', 'sendButton', 'inspectorBody', 'modalBackdrop', 'modalTitle', 'modalForm',
   'modalError', 'modalCloseButton', 'modalCancelButton', 'modalSubmitButton', 'toast'
@@ -231,7 +234,46 @@ function sourceLabel(event) {
   return event.origin_provider;
 }
 
+function chatSpeaker(event) {
+  const payload = event.payload || {};
+  const origin = payload.originProvider || event.origin_provider || '';
+  if (payload.role === 'user' || origin === 'user') return { label: '用户', kind: 'user' };
+  if (origin === 'codex') return { label: 'Codex', kind: 'user' };
+  if (origin && origin !== 'relaydock' && origin !== 'gateway') {
+    return { label: origin, kind: 'external' };
+  }
+  if (payload.role === 'assistant') return { label: '助手', kind: 'external' };
+  if (payload.role === 'system') return { label: '系统', kind: 'system' };
+  return { label: origin || '消息', kind: eventClass(event) };
+}
+
+function syncTimelineModeSwitch() {
+  if (!elements.timelineModeSwitch) return;
+  elements.timelineModeSwitch.querySelectorAll('.mode-switch-button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.mode === state.timelineMode);
+  });
+  elements.timeline.classList.toggle('timeline-chat', state.timelineMode === 'chat');
+  elements.timeline.classList.toggle('timeline-full', state.timelineMode === 'full');
+}
+
+function setTimelineMode(mode) {
+  state.timelineMode = mode === 'chat' ? 'chat' : 'full';
+  localStorage.setItem(TIMELINE_MODE_KEY, state.timelineMode);
+  syncTimelineModeSwitch();
+  renderTimeline();
+}
+
+function visibleTimelineEvents() {
+  const hidden = new Set(['packet.previewed', 'write_lease.acquired', 'write_lease.released']);
+  return state.timeline.filter((event) => {
+    if (hidden.has(event.type)) return false;
+    if (state.timelineMode === 'chat') return event.type === 'message.created';
+    return true;
+  });
+}
+
 function renderTimeline() {
+  syncTimelineModeSwitch();
   if (!state.activeSession) {
     elements.timeline.replaceChildren();
     const empty = node('div', 'empty-state');
@@ -242,57 +284,83 @@ function renderTimeline() {
     return;
   }
   elements.timeline.replaceChildren();
-  if (!state.timeline.length) {
-    elements.timeline.append(node('div', 'empty-state', '当前会话还没有事件。'));
+  const events = visibleTimelineEvents();
+  if (!events.length) {
+    const empty = node('div', 'empty-state');
+    empty.append(node('h3', '', state.timelineMode === 'chat' ? '还没有会话消息' : '当前会话还没有事件'));
+    empty.append(node('p', '', state.timelineMode === 'chat'
+      ? '仅会话模式只显示用户与模型的对话。可切换到「完整轨迹」查看 Checkpoint、工具与审批。'
+      : '导入 Codex 或发送第一条指令后，事件会出现在这里。'));
+    elements.timeline.append(empty);
     return;
   }
-  for (const event of state.timeline) {
-    if (['packet.previewed', 'write_lease.acquired', 'write_lease.released'].includes(event.type)) continue;
-    const entry = node('article', 'timeline-entry');
-    const sequence = node('div', 'timeline-seq', '#' + event.sequence);
+
+  for (const event of events) {
+    const payload = event.payload || {};
+    const entry = node('article', 'timeline-entry' + (state.timelineMode === 'chat' ? ' chat-entry' : ''));
     const card = node('div', 'event-card ' + eventClass(event));
     const head = node('div', 'event-head');
     const author = node('div', 'event-author');
-    const badge = node('span', 'event-source ' + eventClass(event), sourceLabel(event));
-    author.append(badge, node('span', '', event.type));
-    head.append(author, node('span', 'event-time', formatDate(event.created_at)));
-    card.append(head);
 
-    const payload = event.payload || {};
-    if (event.type === 'message.created') {
+    if (state.timelineMode === 'chat') {
+      const speaker = chatSpeaker(event);
+      const badge = node('span', 'event-source ' + speaker.kind, speaker.label);
+      author.append(badge);
+      if (payload.model) author.append(node('span', 'event-model', payload.model));
+      head.append(author, node('span', 'event-time', formatDate(event.created_at)));
+      card.append(head);
       card.append(node('div', 'event-content', payload.content || '(empty)'));
-      if (payload.untrusted) card.append(node('div', 'untrusted-note', '外部模型输出，按不可信证据处理'));
       if (payload.toolCalls && payload.toolCalls.length) {
         const tags = node('div', 'event-tags');
-        for (const call of payload.toolCalls) tags.append(node('span', 'event-tag', call.name + (call.detail ? ' · ' + call.detail : '')));
+        for (const call of payload.toolCalls) {
+          tags.append(node('span', 'event-tag', call.name + (call.detail ? ' · ' + call.detail : '')));
+        }
         card.append(tags);
       }
-    } else if (event.type === 'checkpoint.created') {
-      card.append(node('div', 'event-summary', payload.summary || '已创建工作区快照'));
-      const tags = node('div', 'event-tags');
-      tags.append(node('span', 'event-tag', 'branch ' + (payload.branch || 'unknown')));
-      tags.append(node('span', 'event-tag', payload.changedFiles + ' changed'));
-      tags.append(node('span', 'event-tag', payload.fileCount + ' files'));
-      card.append(tags);
-    } else if (event.type === 'approval.requested') {
-      card.append(node('div', 'event-summary', payload.summary || '等待用户审批工具操作'));
-      const tags = node('div', 'event-tags');
-      tags.append(node('span', 'event-tag', payload.actionType || 'action'));
-      card.append(tags);
-    } else if (event.type === 'tool.completed' || event.type === 'tool.failed') {
-      card.append(node('div', 'event-summary', payload.summary || payload.error || payload.toolName || '工具执行结果'));
-      if (payload.output) {
-        const details = node('details', 'event-details');
-        details.append(node('summary', '', '查看输出'));
-        details.append(node('pre', '', payload.output));
-        card.append(details);
-      }
-    } else if (event.type === 'provider.error') {
-      card.append(node('div', 'event-summary', (payload.code || 'ERROR') + ': ' + (payload.message || '')));
+      entry.append(card);
     } else {
-      card.append(node('div', 'event-summary', JSON.stringify(payload)));
+      const sequence = node('div', 'timeline-seq', '#' + event.sequence);
+      const badge = node('span', 'event-source ' + eventClass(event), sourceLabel(event));
+      author.append(badge, node('span', '', event.type));
+      head.append(author, node('span', 'event-time', formatDate(event.created_at)));
+      card.append(head);
+
+      if (event.type === 'message.created') {
+        card.append(node('div', 'event-content', payload.content || '(empty)'));
+        if (payload.untrusted) card.append(node('div', 'untrusted-note', '外部模型输出，按不可信证据处理'));
+        if (payload.toolCalls && payload.toolCalls.length) {
+          const tags = node('div', 'event-tags');
+          for (const call of payload.toolCalls) tags.append(node('span', 'event-tag', call.name + (call.detail ? ' · ' + call.detail : '')));
+          card.append(tags);
+        }
+      } else if (event.type === 'checkpoint.created') {
+        card.append(node('div', 'event-summary', payload.summary || '已创建工作区快照'));
+        const tags = node('div', 'event-tags');
+        tags.append(node('span', 'event-tag', 'branch ' + (payload.branch || 'unknown')));
+        tags.append(node('span', 'event-tag', payload.changedFiles + ' changed'));
+        tags.append(node('span', 'event-tag', payload.fileCount + ' files'));
+        card.append(tags);
+      } else if (event.type === 'approval.requested') {
+        card.append(node('div', 'event-summary', payload.summary || '等待用户审批工具操作'));
+        const tags = node('div', 'event-tags');
+        tags.append(node('span', 'event-tag', payload.actionType || 'action'));
+        card.append(tags);
+      } else if (event.type === 'tool.completed' || event.type === 'tool.failed') {
+        card.append(node('div', 'event-summary', payload.summary || payload.error || payload.toolName || '工具执行结果'));
+        if (payload.output) {
+          const details = node('details', 'event-details');
+          details.append(node('summary', '', '查看输出'));
+          details.append(node('pre', '', payload.output));
+          card.append(details);
+        }
+      } else if (event.type === 'provider.error') {
+        card.append(node('div', 'event-summary', (payload.code || 'ERROR') + ': ' + (payload.message || '')));
+      } else {
+        card.append(node('div', 'event-summary', JSON.stringify(payload)));
+      }
+      entry.append(sequence, card);
     }
-    entry.append(sequence, card);
+
     elements.timeline.append(entry);
   }
   elements.timeline.scrollTop = elements.timeline.scrollHeight;
@@ -792,6 +860,14 @@ elements.importCodexButton.addEventListener('click', () => openCodexImportModal(
 elements.addProviderButton.addEventListener('click', () => openProviderModal(null));
 elements.refreshButton.addEventListener('click', () => refreshActive().catch((error) => showToast(error.message, true)));
 elements.contractButton.addEventListener('click', openContractModal);
+if (elements.timelineModeSwitch) {
+  elements.timelineModeSwitch.addEventListener('click', (event) => {
+    const button = event.target.closest('.mode-switch-button');
+    if (!button || !button.dataset.mode) return;
+    setTimelineMode(button.dataset.mode);
+  });
+  syncTimelineModeSwitch();
+}
 elements.checkpointButton.addEventListener('click', createCheckpoint);
 elements.packetButton.addEventListener('click', previewPacket);
 elements.exportButton.addEventListener('click', exportForCodex);

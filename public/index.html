@@ -55,6 +55,10 @@
           <p id="activeMeta" class="active-meta">RelayDock 会在这里合并 Codex 与外部模型的进展。</p>
         </div>
         <div class="header-badges">
+          <div id="timelineModeSwitch" class="mode-switch" role="group" aria-label="时间线显示模式">
+            <button type="button" class="mode-switch-button" data-mode="full" title="显示交接、工具、审批等完整处理信息">完整轨迹</button>
+            <button type="button" class="mode-switch-button" data-mode="chat" title="只显示用户与模型的会话消息">仅会话</button>
+          </div>
           <span id="leaseBadge" class="status-pill neutral">无写锁</span>
           <span id="approvalCount" class="status-pill warning">0 审批</span>
           <button id="contractButton" class="secondary-button" type="button">任务契约</button>

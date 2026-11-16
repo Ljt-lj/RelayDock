@@ -416,8 +416,8 @@ RelayDock/
 | Session Ledger | append-only JSONL，而非 SQLite |
 | 快照存储 | 内容寻址 JSON Blob Store |
 | Provider | 仅 OpenAI Chat Completions 兼容 API，默认 DeepSeek |
-| Codex 接入 | Skill / CLI / 本地 API 显式记录，不自动读取 Codex 私有历史 |
-| 模型切换 | 独立 Studio 交接，不替换 Codex 内部 Provider |
+| Codex 接入 | Skill / CLI / 本地 API / MCP 显式记录，不自动读取 Codex 私有历史 |
+| 模型切换 | Studio 交接，或把 Codex/Cursor 指向本地 `/v1` Gateway |
 | Tool Proxy | 三个只读工具和两个审批型变更工具 |
 | 写租约 | 单进程内存租约 |
 | API Key | 环境变量或进程内存，不持久化 |
@@ -438,8 +438,13 @@ RelayDock/
 下一阶段优先事项：
 
 1. 引入 SQLite 账本索引和稳定的增量游标。
-2. 提供 MCP Server，让 Codex 直接调用会话、Checkpoint 和 Packet 工具。
-3. 增加 Responses API Gateway 验证，同时保留独立 Studio 兜底。
-4. 增加 SSE 流式事件、费用预算和额度回退策略。
-5. 扩展 Anthropic、Gemini 和自定义 Provider Adapter。
-6. 增加跨进程写锁、冲突合并和敏感文件交互式确认。
+2. 增强 Responses API Gateway 与流式事件，同时保留独立 Studio 兜底。
+3. 增加费用预算和额度回退策略。
+4. 扩展 Anthropic、Gemini 和自定义 Provider Adapter。
+5. 增加跨进程写锁、冲突合并和敏感文件交互式确认。
+
+已落地的纯桥接能力：
+
+1. stdio MCP 控制面（`node bin/relaydock.js mcp`）。
+2. OpenAI Chat Completions 兼容 Gateway（`/v1/models`、`/v1/chat/completions`）。
+3. 外部会话绑定（`externalKey` → RelayDock session）。

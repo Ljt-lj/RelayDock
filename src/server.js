@@ -5,9 +5,9 @@ const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
 const { URL } = require('node:url');
+const { handleGatewayRequest } = require('./gateway');
 const { RelayService } = require('./service');
-
-const VERSION = '0.1.0';
+const { VERSION } = require('./version');
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -117,8 +117,35 @@ async function createRelayServer(options = {}) {
         return sendJson(response, 200, { ok: true, version: VERSION });
       }
       if (pathname === '/api/bootstrap' && request.method === 'GET') {
-        return sendJson(response, 200, { token, version: VERSION, workspace: service.workspace });
+        return sendJson(response, 200, {
+          token,
+          version: VERSION,
+          workspace: service.workspace,
+          gateway: {
+            baseUrl: 'http://' + (request.headers.host || '127.0.0.1') + '/v1',
+            auth: 'Authorization: Bearer <token>',
+            models: ['deepseek', 'relaydock/deepseek', 'relaydock/deepseek+raw', 'relaydock/deepseek+agent']
+          },
+          mcp: {
+            command: 'node',
+            args: ['bin/relaydock.js', 'mcp', '--workspace', service.workspace]
+          }
+        });
       }
+
+      if (
+        pathname === '/v1'
+        || pathname.startsWith('/v1/')
+        || pathname === '/models'
+        || pathname === '/chat/completions'
+        || pathname === '/responses'
+      ) {
+        const body = request.method === 'GET' || request.method === 'HEAD' ? null : await readJsonBody(request);
+        const result = await handleGatewayRequest(service, request, url, body || {}, token, response);
+        if (result && result.streamed) return;
+        return sendJson(response, result.status, result.value);
+      }
+
       if (pathname.startsWith('/api/') && request.headers['x-relaydock-token'] !== token) {
         return sendJson(response, 401, { error: { code: 'TOKEN_REQUIRED', message: 'A valid RelayDock session token is required' } });
       }
@@ -210,6 +237,16 @@ async function createRelayServer(options = {}) {
         return sendJson(response, 200, await service.getDiff());
       }
 
+      if (pathname === '/api/codex/sessions' && request.method === 'GET') {
+        return sendJson(response, 200, await service.listCodexSessions({
+          limit: Number(url.searchParams.get('limit')) || 30,
+          codexHome: url.searchParams.get('codexHome') || undefined
+        }));
+      }
+      if (pathname === '/api/codex/import' && request.method === 'POST') {
+        return sendJson(response, 201, await service.importCodexSession(await readJsonBody(request)));
+      }
+
       if (pathname.startsWith('/api/')) {
         return sendJson(response, 404, { error: { code: 'NOT_FOUND', message: 'API endpoint not found' } });
       }
@@ -259,4 +296,4 @@ function listen(server, options = {}) {
   });
 }
 
-module.exports = { VERSION, createRelayServer, listen };
+module.exports = { VERSION, createRelayServer, listen }; // VERSION re-exported for compatibility

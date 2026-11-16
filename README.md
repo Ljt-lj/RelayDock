@@ -17,6 +17,9 @@ RelayDock 是一个面向本地编码 Agent 的接力工作台：把 Codex 中�
 - 单写入者租约、工作区冲突检查和密钥脱敏；
 - 本地 HTTP API；
 - RelayDock Studio 可视化工作台；
+- OpenAI 兼容 Model Gateway（`/v1`），可被 Codex / Cursor 当作模型端点；
+- stdio MCP 控制面，供三方平台显式记录会话证据与交接；
+- 从本机 `~/.codex/sessions` 导入 Codex rollout 到 Studio/CLI/MCP；
 - 会话、消息、快照、Packet、模型回合、审批和导出 CLI；
 - 事件、Provider 和 Relay Packet JSON Schema；
 - 使用 Node.js 内置测试框架的自动化测试。
@@ -57,7 +60,12 @@ cd D:\RelayDock
 node .\bin\relaydock.js serve --workspace D:\RelayDock --port 4173
 ~~~
 
-打开 http://127.0.0.1:4173/ 进入 RelayDock Studio。
+打开 http://127.0.0.1:4173/ 进入 RelayDock Studio。同一进程还暴露纯桥接入口：
+
+- Gateway: `http://127.0.0.1:4173/v1`
+- MCP: `node .\bin\relaydock.js mcp --workspace D:\RelayDock`
+
+纯桥接用法见 [docs/bridge.md](docs/bridge.md)。把 Codex / Cursor 的 Base URL 指到 Gateway，或通过 MCP 只导入证据；真实聊天仍留在原平台。
 
 默认数据目录是工作区下的 .relaydock，可用 --data-dir 或 RELAYDOCK_DATA_DIR 覆盖：
 
@@ -164,14 +172,16 @@ Skill 不负责自动读取 Codex 内部隐藏历史，也不承诺复制模型�
 - 不是可直接替换 Codex 全局模型的 Model Gateway。
 - 写租约是单进程内存状态，不是多实例分布式锁。
 - Tool Proxy 目前提供三个只读工具和两个审批型变更工具。
-- 尚无多用户认证、SSE/流式 UI、费用预算、自动额度检测和完整 MCP Server。
+- 已提供 stdio MCP 与 Chat Completions Gateway；尚未实现 Responses API、SSE/流式 UI、费用预算和自动额度检测。
 - RelayDock 自己运行有限的 Agent Loop；复杂工具能力仍取决于目标模型的 Tool Call 兼容性。
 
-后续方向包括 SQLite 索引、Codex MCP 控制面、模型额度与回退策略、Responses API Gateway、流式事件、增量回传、冲突合并和多实例协调。
+后续方向包括 SQLite 索引、模型额度与回退策略、Responses API 完整兼容、流式事件、增量回传、冲突合并和多实例协调。
 
 ## 文档
 
+- [中文使用说明](docs/使用说明.md)
 - [初步设计](docs/initial-design.md)
+- [纯桥接 MCP / Gateway](docs/bridge.md)
 - [本地 API](docs/api.md)
 - [Codex Skill](SKILL.md)
 

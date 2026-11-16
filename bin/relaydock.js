@@ -2,8 +2,10 @@
 'use strict';
 
 const path = require('node:path');
+const { McpServer } = require('../src/mcp-server');
 const { RelayService } = require('../src/service');
-const { createRelayServer, listen, VERSION } = require('../src/server');
+const { createRelayServer, listen } = require('../src/server');
+const { VERSION } = require('../src/version');
 
 function parseArgs(argv) {
   const positional = [];
@@ -48,6 +50,7 @@ async function main() {
       '',
       'Commands:',
       '  serve [--host 127.0.0.1] [--port 4173] [--workspace PATH]',
+      '  mcp [--workspace PATH] [--data-dir PATH]',
       '  status [--workspace PATH]',
       '  session:create --title TEXT [--goal TEXT]',
       '  session:list',
@@ -60,6 +63,12 @@ async function main() {
       '  approval:resolve --approval ID --decision approve|reject [--continue]',
       '  provider:list',
       '  export --session ID [--format markdown|json]',
+      '  codex:list [--limit 30]',
+      '  codex:import --rollout PATH|SESSION_ID [--session ID] [--max-messages 60]',
+      '',
+      'Bridge modes:',
+      '  mcp   stdio MCP control plane for Codex/Cursor',
+      '  serve also exposes OpenAI-compatible Gateway at /v1',
       '',
       'Provider credentials are read from the API key environment variable or set through the Studio API.'
     ].join('\n'));
@@ -70,7 +79,16 @@ async function main() {
     const server = await createRelayServer({ service });
     const address = await listen(server, { host: flags.host, port: flags.port });
     print('RelayDock Studio: ' + address.url);
+    print('Gateway: ' + address.url + '/v1');
+    print('Auth: Authorization: Bearer ' + server.token);
     print('Workspace: ' + service.workspace);
+    print('MCP: node bin/relaydock.js mcp --workspace ' + service.workspace);
+    return;
+  }
+  if (command === 'mcp') {
+    const service = makeService(flags);
+    const mcp = new McpServer(service);
+    await mcp.start();
     return;
   }
 
@@ -119,6 +137,20 @@ async function main() {
   if (command === 'provider:list') return print({ providers: await service.providerList() });
   if (command === 'export') {
     return print(await service.exportSession(flags.session, flags.format === 'json' ? 'json' : 'markdown'));
+  }
+  if (command === 'codex:list') {
+    return print(await service.listCodexSessions({ limit: Number(flags.limit) || 30 }));
+  }
+  if (command === 'codex:import') {
+    if (!flags.rollout && !flags.session && !flags.path) throw new Error('--rollout PATH|SESSION_ID is required');
+    return print(await service.importCodexSession({
+      path: flags.rollout || flags.path,
+      sessionId: flags.session || undefined,
+      maxMessages: Number(flags['max-messages']) || 60,
+      title: flags.title,
+      goal: flags.goal,
+      createCheckpoint: flags['no-checkpoint'] ? false : true
+    }));
   }
   throw new Error('Unknown command: ' + command);
 }

@@ -20,7 +20,17 @@ RelayDock is an explicit sidecar. Do not claim that it automatically reads Codex
 node .\bin\relaydock.js serve --workspace . --port 4173
 ~~~
 
-Studio: http://127.0.0.1:4173/
+Studio: http://127.0.0.1:4173/  
+Gateway: http://127.0.0.1:4173/v1  
+MCP: `node .\bin\relaydock.js mcp --workspace .`
+
+Prefer the pure-bridge path when the user wants the real conversation to stay in Codex or Cursor:
+
+1. Keep chatting in the source platform.
+2. Use MCP tools or the Gateway model endpoint so RelayDock only records evidence and forwards upstream.
+3. Use Studio only for packet preview, approvals, and audit.
+
+See docs/bridge.md for MCP client config and Gateway model names.
 
 ## Handoff Workflow
 

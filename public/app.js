@@ -17,7 +17,7 @@ const state = {
 
 const elements = {};
 for (const id of [
-  'healthBadge', 'workspaceLabel', 'refreshButton', 'newSessionButton', 'sessionList',
+  'healthBadge', 'workspaceLabel', 'refreshButton', 'importCodexButton', 'newSessionButton', 'sessionList',
   'addProviderButton', 'providerList', 'activeTitle', 'activeMeta', 'leaseBadge', 'approvalCount',
   'contractButton', 'timeline', 'providerSelect', 'composerText', 'checkpointButton', 'packetButton',
   'exportButton', 'sendButton', 'inspectorBody', 'modalBackdrop', 'modalTitle', 'modalForm',
@@ -590,6 +590,7 @@ function openModal(title, fields, submitLabel, onSubmit) {
   elements.modalTitle.textContent = title;
   elements.modalForm.replaceChildren(...fields);
   elements.modalSubmitButton.textContent = submitLabel;
+  elements.modalSubmitButton.classList.remove('hidden');
   elements.modalError.classList.add('hidden');
   elements.modalBackdrop.classList.remove('hidden');
   elements.modalBackdrop.setAttribute('aria-hidden', 'false');
@@ -614,6 +615,7 @@ function closeModal() {
   elements.modalBackdrop.classList.add('hidden');
   elements.modalBackdrop.setAttribute('aria-hidden', 'true');
   elements.modalError.classList.add('hidden');
+  elements.modalSubmitButton.classList.remove('hidden');
   elements.modalSubmitButton.onclick = null;
   state.modalMode = null;
 }
@@ -639,6 +641,78 @@ function openSessionModal() {
     await selectSession(session.id);
     showToast('会话已创建');
   });
+}
+
+async function openCodexImportModal() {
+  setBusy(true);
+  try {
+    const data = await api('/api/codex/sessions?limit=30');
+    const rollouts = data.rollouts || [];
+    elements.modalTitle.textContent = '导入本机 Codex 会话';
+    elements.modalForm.replaceChildren();
+    elements.modalError.classList.add('hidden');
+    elements.modalSubmitButton.classList.add('hidden');
+
+    if (!rollouts.length) {
+      elements.modalForm.append(node('p', '', '未在 ' + (data.sessionsRoot || '~/.codex/sessions') + ' 找到 rollout 文件。'));
+    } else {
+      const hint = node('p', '', '选择一条 Codex 本地记录，RelayDock 会自动抽取用户/助手消息并创建会话（跳过环境注入等噪音）。');
+      hint.style.margin = '0 0 10px';
+      hint.style.color = 'var(--muted)';
+      hint.style.fontSize = '13px';
+      elements.modalForm.append(hint);
+      const list = node('div', 'codex-import-list');
+      for (const item of rollouts) {
+        const button = node('button', 'codex-import-item');
+        button.type = 'button';
+        button.append(node('strong', '', item.cwd ? pathTail(item.cwd) : item.sessionId));
+        button.append(node('span', '', [
+          formatDate(item.mtime),
+          item.source || '',
+          item.modelProvider || '',
+          item.sessionId.slice(0, 8)
+        ].filter(Boolean).join(' · ')));
+        button.append(node('span', '', item.fileName));
+        button.addEventListener('click', async () => {
+          setBusy(true);
+          try {
+            const result = await api('/api/codex/import', {
+              method: 'POST',
+              body: {
+                path: item.path,
+                maxMessages: 60,
+                createCheckpoint: true
+              }
+            });
+            closeModal();
+            await loadOverview(false);
+            await selectSession(result.session.id);
+            showToast('已导入 ' + result.imported.length + ' 条 Codex 消息');
+          } catch (error) {
+            elements.modalError.textContent = error.message;
+            elements.modalError.classList.remove('hidden');
+            showToast(error.message, true);
+          } finally {
+            setBusy(false);
+          }
+        });
+        list.append(button);
+      }
+      elements.modalForm.append(list);
+    }
+
+    elements.modalBackdrop.classList.remove('hidden');
+    elements.modalBackdrop.setAttribute('aria-hidden', 'false');
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function pathTail(value) {
+  const parts = String(value || '').replace(/\\/g, '/').split('/');
+  return parts[parts.length - 1] || value;
 }
 
 function openContractModal() {
@@ -714,6 +788,7 @@ function openProviderModal(provider) {
 }
 
 elements.newSessionButton.addEventListener('click', openSessionModal);
+elements.importCodexButton.addEventListener('click', () => openCodexImportModal().catch((error) => showToast(error.message, true)));
 elements.addProviderButton.addEventListener('click', () => openProviderModal(null));
 elements.refreshButton.addEventListener('click', () => refreshActive().catch((error) => showToast(error.message, true)));
 elements.contractButton.addEventListener('click', openContractModal);

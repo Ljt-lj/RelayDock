@@ -1,6 +1,6 @@
 # RelayDock API
 
-RelayDock exposes a local HTTP API for the Studio, CLI integrations, and a future Codex MCP bridge.
+RelayDock exposes a local HTTP API for the Studio, CLI integrations, the OpenAI-compatible Gateway, and the stdio MCP bridge.
 
 ## Start
 
@@ -48,6 +48,14 @@ Requests with an Origin header must be same-origin. The server rejects cross-ori
 | GET | /api/sessions/:id/export?format=json | JSON session export |
 | POST | /api/approvals/:id/resolve | Approve or reject a pending action |
 | GET | /api/diff | Git status and diff for the workspace |
+| GET | /v1/models | OpenAI-compatible model list (Bearer token) |
+| POST | /v1/chat/completions | OpenAI-compatible bridge completion (Bearer token) |
+| POST | /v1/responses | OpenAI Responses API bridge for Codex (Bearer token) |
+| GET | /v1/responses/:id | Read a recently bridged Responses result |
+| GET | /api/codex/sessions | List local Codex rollout files under ~/.codex/sessions |
+| POST | /api/codex/import | Import a Codex rollout into a RelayDock session |
+
+Gateway details and MCP setup: [bridge.md](bridge.md).
 
 All write endpoints accept application/json and have a 2 MiB request-body limit. Session messages have an additional 200,000-character limit.
 

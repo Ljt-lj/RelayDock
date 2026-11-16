@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relaydock.local/schemas/relay-packet.schema.json",
+  "title": "Relay Packet Preview",
+  "type": "object",
+  "required": [
+    "sessionId",
+    "checkpointId",
+    "generatedAt",
+    "markdown",
+    "stats"
+  ],
+  "properties": {
+    "sessionId": {
+      "type": "string"
+    },
+    "checkpointId": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "markdown": {
+      "type": "string"
+    },
+    "stats": {
+      "type": "object"
+    },
+    "omitted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

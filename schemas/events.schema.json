@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relaydock.local/schemas/events.schema.json",
+  "title": "RelayDock Ledger Event",
+  "type": "object",
+  "required": [
+    "event_id",
+    "session_id",
+    "branch_id",
+    "sequence",
+    "origin_provider",
+    "actor",
+    "type",
+    "created_at",
+    "content_hash",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "origin_provider": {
+      "type": "string"
+    },
+    "actor": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "content_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

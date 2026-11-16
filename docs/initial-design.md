@@ -63,7 +63,7 @@ Skill 负责定义交互流程和安全规则。持久化、模型适配、工�
 
 Session Ledger 是所有 Agent 和界面共享的唯一事实来源。
 
-采用 append-only 事件模型，建议使用 SQLite 保存索引和事件，较大的工具输出、Diff 与附件单独存文件。
+采用 append-only 事件模型。初步设计建议最终使用 SQLite 保存索引和事件；当前 MVP 为保持零依赖，使用 JSONL 账本，并将较大的 Checkpoint 放入独立 Blob Store。
 
 主要事件类型：
 
@@ -152,7 +152,7 @@ Provider Adapter 负责屏蔽供应商协议差异，至少支持：
 - Gemini API；
 - 通用自定义 HTTP Provider。
 
-Adapter 需要统一处理：
+当前 MVP 已实现 OpenAI Chat Completions 兼容 Adapter 和 DeepSeek 默认配置；以下能力是后续扩展目标。Adapter 需要统一处理：
 
 - 流式输出；
 - Tool Call 和 Tool Result；
@@ -322,7 +322,7 @@ RelayDock Studio 采用本地工作台形式。
 
 ## 8. 安全与隐私
 
-- API Key 存入系统凭据管理器，不写入会话数据库。
+- 设计目标是由系统凭据管理器持有 API Key；当前 MVP 仅从环境变量或进程内存读取，不写入会话账本、Provider 配置或快照。
 - Web UI 默认只监听 `127.0.0.1`。
 - 本地服务使用短期访问令牌和 CSRF 防护。
 - 默认不上传完整仓库，只上传 Relay Packet 所需内容。
@@ -405,3 +405,41 @@ RelayDock/
 5. Codex 会话、工具结果和 Git 状态可以被稳定捕获到什么程度。
 
 技术验证结果将决定第一版优先采用 Sidecar、Model Gateway 还是独立 Web UI。
+
+
+## 13. MVP 落地状态
+
+第一版已按 Sidecar 路线实现，入口包括本地 CLI、HTTP API 和 RelayDock Studio。当前实现与前述长期设计存在以下有意差异：
+
+| 设计项 | 当前 MVP |
+| --- | --- |
+| Session Ledger | append-only JSONL，而非 SQLite |
+| 快照存储 | 内容寻址 JSON Blob Store |
+| Provider | 仅 OpenAI Chat Completions 兼容 API，默认 DeepSeek |
+| Codex 接入 | Skill / CLI / 本地 API 显式记录，不自动读取 Codex 私有历史 |
+| 模型切换 | 独立 Studio 交接，不替换 Codex 内部 Provider |
+| Tool Proxy | 三个只读工具和两个审批型变更工具 |
+| 写租约 | 单进程内存租约 |
+| API Key | 环境变量或进程内存，不持久化 |
+| 回传方式 | Markdown / JSON 导出 |
+| 流式输出 | 尚未实现 |
+
+已完成的 MVP 验收路径：
+
+1. 创建会话并记录目标、约束、验收标准、决策和待办。
+2. 从 Codex 侧导入关键消息和工具结果。
+3. 创建包含 Git 状态、文件哈希、近期对话和工具历史的 Checkpoint。
+4. 编译并预览有字符预算的 Relay Packet。
+5. 通过 DeepSeek 或其他兼容 Provider 发起接力回合。
+6. 对文件写入和命令执行进行人工审批。
+7. 在统一时间线中审计双方消息、工具、错误、租约和交接事件。
+8. 导出 Markdown 或 JSON 回传 Codex。
+
+下一阶段优先事项：
+
+1. 引入 SQLite 账本索引和稳定的增量游标。
+2. 提供 MCP Server，让 Codex 直接调用会话、Checkpoint 和 Packet 工具。
+3. 增加 Responses API Gateway 验证，同时保留独立 Studio 兜底。
+4. 增加 SSE 流式事件、费用预算和额度回退策略。
+5. 扩展 Anthropic、Gemini 和自定义 Provider Adapter。
+6. 增加跨进程写锁、冲突合并和敏感文件交互式确认。

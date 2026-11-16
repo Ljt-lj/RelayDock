@@ -63,6 +63,8 @@ async function main() {
       '  approval:resolve --approval ID --decision approve|reject [--continue]',
       '  provider:list',
       '  export --session ID [--format markdown|json]',
+      '  workspace:get',
+      '  workspace:set --path PATH',
       '  codex:list [--limit 30]',
       '  codex:import --rollout PATH|SESSION_ID [--session ID] [--max-messages 60]',
       '',
@@ -137,6 +139,11 @@ async function main() {
   if (command === 'provider:list') return print({ providers: await service.providerList() });
   if (command === 'export') {
     return print(await service.exportSession(flags.session, flags.format === 'json' ? 'json' : 'markdown'));
+  }
+  if (command === 'workspace:get') return print(await service.getWorkspace());
+  if (command === 'workspace:set') {
+    if (!flags.path) throw new Error('--path is required');
+    return print(await service.setWorkspace(flags.path));
   }
   if (command === 'codex:list') {
     return print(await service.listCodexSessions({ limit: Number(flags.limit) || 30 }));

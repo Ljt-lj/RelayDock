@@ -20,7 +20,7 @@ const state = {
 
 const elements = {};
 for (const id of [
-  'healthBadge', 'workspaceLabel', 'refreshButton', 'importCodexButton', 'newSessionButton', 'sessionList',
+  'healthBadge', 'workspaceButton', 'workspaceLabel', 'refreshButton', 'importCodexButton', 'newSessionButton', 'sessionList',
   'addProviderButton', 'providerList', 'activeTitle', 'activeMeta', 'timelineModeSwitch', 'leaseBadge', 'approvalCount',
   'contractButton', 'timeline', 'providerSelect', 'composerText', 'checkpointButton', 'packetButton',
   'exportButton', 'sendButton', 'inspectorBody', 'modalBackdrop', 'modalTitle', 'modalForm',
@@ -94,6 +94,13 @@ async function loadOverview(selectFirst = false) {
   state.providers = data.providers;
   state.approvals = data.approvals;
   state.leases = data.leases;
+  state.workspace = data.workspace || state.workspace;
+  state.recentWorkspaces = data.recentWorkspaces || [];
+  if (elements.workspaceLabel) {
+    elements.workspaceLabel.textContent = shortPath(state.workspace);
+    elements.workspaceLabel.title = state.workspace || '';
+  }
+  if (elements.workspaceButton) elements.workspaceButton.title = '配置工作区：' + (state.workspace || '');
   renderSessions();
   renderProviders();
   if (!state.activeSession && (selectFirst || state.sessions.length)) {
@@ -105,6 +112,44 @@ async function loadOverview(selectFirst = false) {
   renderHeader();
   renderTimeline();
   renderInspector();
+}
+
+function openWorkspaceModal() {
+  const fields = [];
+  fields.push(modalField(
+    '工作区路径',
+    'path',
+    state.workspace || '',
+    'text',
+    '文件读写、Git Diff、Checkpoint 都限定在此目录内。会话账本仍保存在服务启动时的数据目录。'
+  ));
+  if (state.recentWorkspaces && state.recentWorkspaces.length) {
+    const recent = node('div', 'recent-workspaces');
+    recent.append(node('div', 'recent-workspaces-title', '最近使用'));
+    for (const item of state.recentWorkspaces.slice(0, 8)) {
+      const button = node('button', 'recent-workspace-item', item);
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        const input = elements.modalForm.querySelector('[name="path"]');
+        if (input) input.value = item;
+      });
+      recent.append(button);
+    }
+    fields.push(recent);
+  }
+  openModal('配置工作区', fields, '切换工作区', async (values) => {
+    const result = await api('/api/workspace', {
+      method: 'PUT',
+      body: { path: values.path }
+    });
+    state.workspace = result.workspace;
+    state.recentWorkspaces = result.recentWorkspaces || [];
+    state.diff = null;
+    elements.workspaceLabel.textContent = shortPath(state.workspace);
+    elements.workspaceLabel.title = state.workspace;
+    await loadOverview(false);
+    showToast('工作区已切换到 ' + shortPath(result.workspace));
+  });
 }
 
 async function selectSession(sessionId) {
@@ -860,6 +905,9 @@ elements.importCodexButton.addEventListener('click', () => openCodexImportModal(
 elements.addProviderButton.addEventListener('click', () => openProviderModal(null));
 elements.refreshButton.addEventListener('click', () => refreshActive().catch((error) => showToast(error.message, true)));
 elements.contractButton.addEventListener('click', openContractModal);
+if (elements.workspaceButton) {
+  elements.workspaceButton.addEventListener('click', openWorkspaceModal);
+}
 if (elements.timelineModeSwitch) {
   elements.timelineModeSwitch.addEventListener('click', (event) => {
     const button = event.target.closest('.mode-switch-button');

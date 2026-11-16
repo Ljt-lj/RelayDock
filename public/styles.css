@@ -62,7 +62,6 @@ h1, h2, h3, p { margin-top: 0; }
 .brand-name { font-size: 17px; font-weight: 720; letter-spacing: 0.01em; }
 .brand-subtitle { color: #9fb9ad; font-size: 12px; border-left: 1px solid #3b5148; padding-left: 10px; }
 .topbar-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.workspace-label { color: #9fb9ad; font-size: 12px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -238,6 +237,48 @@ h1, h2, h3, p { margin-top: 0; }
 .provider-state { color: var(--muted); font-size: 10px; }
 .provider-state.ready { color: var(--teal); }
 .sidebar-footer { margin-top: auto; padding-top: 14px; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
+.workspace-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(420px, 46vw);
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.workspace-button:hover { border-color: #9ec4b8; background: #f3faf7; }
+.workspace-button-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex: none;
+}
+.workspace-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+.recent-workspaces { display: grid; gap: 6px; }
+.recent-workspaces-title { color: var(--muted); font-size: 11px; font-weight: 700; }
+.recent-workspace-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--ink);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.recent-workspace-item:hover { border-color: #9ec4b8; background: #eef7f3; }
 
 .conversation-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #f8faf7; }
 .conversation-header {
@@ -472,7 +513,8 @@ textarea:focus, input:focus, select:focus { border-color: var(--teal); box-shado
 }
 @media (max-width: 760px) {
   .topbar { padding: 0 12px; }
-  .brand-subtitle, .workspace-label { display: none; }
+  .brand-subtitle, .workspace-button-label { display: none; }
+  .workspace-button { max-width: 46vw; }
   .workbench { display: flex; flex-direction: column; }
   .sessions-sidebar { padding: 12px; border-right: 0; border-bottom: 1px solid var(--line); }
   .session-list { display: flex; overflow-x: auto; padding-bottom: 4px; }

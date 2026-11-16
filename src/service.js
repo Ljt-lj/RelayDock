@@ -20,7 +20,7 @@ const {
 } = require('./gateway');
 const { Ledger } = require('./ledger');
 const { OpenAICompatibleProvider, ProviderError } = require('./provider');
-const { hashObject, redactDeep, redactText, sha256 } = require('./utils');
+const { hashObject, readJson, redactDeep, redactText, sha256, writeJson } = require('./utils');
 const { collectWorkspaceState, getGitState } = require('./workspace');
 const { ToolProxy, parseArguments } = require('./tool-proxy');
 
@@ -55,6 +55,9 @@ class RelayService {
     this.bindings = new BindingStore(this.dataDir);
     this.leases = new Map();
     this.ready = null;
+    this.commandTimeoutMs = options.commandTimeoutMs;
+    this.maxOutputBytes = options.maxOutputBytes;
+    this.settingsFile = path.join(this.dataDir, 'settings.json');
   }
 
   async init() {
@@ -64,9 +67,96 @@ class RelayService {
         await this.ledger.init();
         await this.providers.list();
         await this.bindings.load();
+        const settings = await this.loadSettings();
+        if (settings.workspace && path.resolve(settings.workspace) !== this.workspace) {
+          try {
+            await this.applyWorkspace(settings.workspace, { persist: false, allowMissingRecent: true });
+          } catch {
+            // Keep the startup workspace when the remembered path is gone.
+          }
+        }
       })();
     }
     return this.ready;
+  }
+
+  async loadSettings() {
+    const stored = await readJson(this.settingsFile, null);
+    if (!stored || typeof stored !== 'object') {
+      return { version: 1, workspace: this.workspace, recentWorkspaces: [this.workspace] };
+    }
+    const recent = Array.isArray(stored.recentWorkspaces)
+      ? stored.recentWorkspaces.map(String).filter(Boolean)
+      : [];
+    return {
+      version: 1,
+      workspace: stored.workspace ? String(stored.workspace) : this.workspace,
+      recentWorkspaces: recent
+    };
+  }
+
+  async saveSettings(settings) {
+    const recent = [];
+    for (const item of settings.recentWorkspaces || []) {
+      const resolved = path.resolve(String(item));
+      if (!recent.includes(resolved)) recent.push(resolved);
+      if (recent.length >= 12) break;
+    }
+    const payload = {
+      version: 1,
+      workspace: path.resolve(settings.workspace || this.workspace),
+      recentWorkspaces: recent
+    };
+    await writeJson(this.settingsFile, payload, { mode: 0o600 });
+    return payload;
+  }
+
+  async getWorkspace() {
+    await this.init();
+    const settings = await this.loadSettings();
+    return {
+      workspace: this.workspace,
+      dataDir: this.dataDir,
+      recentWorkspaces: settings.recentWorkspaces || [this.workspace]
+    };
+  }
+
+  async applyWorkspace(inputPath, options = {}) {
+    const resolved = path.resolve(String(inputPath || '').trim());
+    if (!resolved) throw serviceError('Workspace path is required', 'INVALID_WORKSPACE');
+    let stat;
+    try {
+      stat = await fs.stat(resolved);
+    } catch {
+      throw serviceError('Workspace path does not exist: ' + resolved, 'WORKSPACE_NOT_FOUND', 404);
+    }
+    if (!stat.isDirectory()) throw serviceError('Workspace must be a directory', 'INVALID_WORKSPACE');
+
+    const activeLease = [...this.leases.entries()].find(([, lease]) => lease.expiresAt > Date.now());
+    if (activeLease) {
+      throw serviceError('Cannot change workspace while a write lease is held', 'WRITE_LEASE_BUSY', 409);
+    }
+
+    const previous = this.workspace;
+    const settings = await this.loadSettings();
+    this.workspace = resolved;
+    this.toolProxy = new ToolProxy(this.workspace, this.dataDir, {
+      getSecrets: () => this.credentials.allSecrets(),
+      timeoutMs: this.commandTimeoutMs,
+      maxOutputBytes: this.maxOutputBytes
+    });
+
+    if (options.persist !== false) {
+      const recent = [resolved, previous, ...(settings.recentWorkspaces || [])];
+      await this.saveSettings({ workspace: resolved, recentWorkspaces: recent });
+    }
+
+    return this.getWorkspace();
+  }
+
+  async setWorkspace(inputPath) {
+    await this.init();
+    return this.applyWorkspace(inputPath, { persist: true });
   }
 
   async listBindings() {
@@ -959,8 +1049,10 @@ class RelayService {
     const sessions = await this.listSessions();
     const providers = await this.providerList();
     const approvals = await this.pendingApprovals();
+    const workspaceInfo = await this.getWorkspace();
     return {
       workspace: this.workspace,
+      recentWorkspaces: workspaceInfo.recentWorkspaces,
       sessions,
       providers,
       approvals,

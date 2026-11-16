@@ -150,6 +150,19 @@ function tools() {
       required: ['sessionId'],
       additionalProperties: false
     }),
+    tool('relaydock_workspace_get', 'Show the current RelayDock workspace and recent workspaces.', {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    }),
+    tool('relaydock_workspace_set', 'Switch the file/Git workspace directory used by tools, checkpoints, and diffs.', {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to an existing directory' }
+      },
+      required: ['path'],
+      additionalProperties: false
+    }),
     tool('relaydock_codex_list', 'List local Codex rollout sessions from ~/.codex/sessions for import.', {
       type: 'object',
       properties: {
@@ -237,6 +250,10 @@ async function callTool(service, name, args = {}) {
       });
     case 'relaydock_export':
       return service.exportSession(args.sessionId, args.format === 'json' ? 'json' : 'markdown');
+    case 'relaydock_workspace_get':
+      return service.getWorkspace();
+    case 'relaydock_workspace_set':
+      return service.setWorkspace(args.path);
     case 'relaydock_codex_list':
       return service.listCodexSessions({ limit: args.limit });
     case 'relaydock_codex_import':

@@ -237,6 +237,14 @@ async function createRelayServer(options = {}) {
         return sendJson(response, 200, await service.getDiff());
       }
 
+      if (pathname === '/api/workspace' && request.method === 'GET') {
+        return sendJson(response, 200, await service.getWorkspace());
+      }
+      if (pathname === '/api/workspace' && request.method === 'PUT') {
+        const body = await readJsonBody(request);
+        return sendJson(response, 200, await service.setWorkspace(body.path || body.workspace));
+      }
+
       if (pathname === '/api/codex/sessions' && request.method === 'GET') {
         return sendJson(response, 200, await service.listCodexSessions({
           limit: Number(url.searchParams.get('limit')) || 30,

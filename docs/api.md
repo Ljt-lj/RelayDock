@@ -54,6 +54,8 @@ Requests with an Origin header must be same-origin. The server rejects cross-ori
 | GET | /v1/responses/:id | Read a recently bridged Responses result |
 | GET | /api/codex/sessions | List local Codex rollout files under ~/.codex/sessions |
 | POST | /api/codex/import | Import a Codex rollout into a RelayDock session |
+| GET | /api/workspace | Current workspace, data directory, and recent workspaces |
+| PUT | /api/workspace | Switch the active file/Git workspace (`{ "path": "..." }`) |
 
 Gateway details and MCP setup: [bridge.md](bridge.md).
 

@@ -45,6 +45,21 @@ class BindingStore {
     const data = await this.load();
     return Object.entries(data.bindings).map(([externalKey, value]) => ({ externalKey, ...value }));
   }
+
+  async removeBySession(sessionId) {
+    const id = String(sessionId || '');
+    if (!id) return [];
+    const data = await this.load();
+    const removed = [];
+    for (const [externalKey, value] of Object.entries(data.bindings)) {
+      if (value && value.sessionId === id) {
+        removed.push(externalKey);
+        delete data.bindings[externalKey];
+      }
+    }
+    if (removed.length) await this.save(data);
+    return removed;
+  }
 }
 
 function normalizeKey(value) {

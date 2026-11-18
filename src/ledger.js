@@ -80,6 +80,32 @@ class Ledger {
   async timeline(sessionId) {
     return (await this.list({ sessionId })).sort((a, b) => a.sequence - b.sequence);
   }
+
+  async deleteSession(sessionId) {
+    await this.init();
+    const operation = this.queue.then(async () => {
+      const id = String(sessionId || '');
+      if (!id) throw new Error('sessionId is required');
+      const remaining = this.events.filter((event) => event.session_id !== id);
+      const removed = this.events.length - remaining.length;
+      if (!removed) {
+        const error = new Error('Session not found');
+        error.code = 'SESSION_NOT_FOUND';
+        throw error;
+      }
+      const tmp = this.file + '.tmp-' + crypto.randomUUID();
+      const body = remaining.length
+        ? remaining.map((event) => JSON.stringify(event)).join('\n') + '\n'
+        : '';
+      await fs.writeFile(tmp, body, { encoding: 'utf8', mode: 0o600 });
+      await fs.rename(tmp, this.file);
+      this.events = remaining;
+      this.sequences.delete(id);
+      return { sessionId: id, removedEvents: removed };
+    });
+    this.queue = operation.catch(() => {});
+    return operation;
+  }
 }
 
 module.exports = { Ledger };

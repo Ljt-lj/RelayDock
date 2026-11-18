@@ -38,6 +38,7 @@ Requests with an Origin header must be same-origin. The server rejects cross-ori
 | POST | /api/sessions | Create a session contract |
 | GET | /api/sessions/:id | Session plus pending approvals |
 | PATCH | /api/sessions/:id | Update the task contract |
+| DELETE | /api/sessions/:id | Hard-delete a session, its ledger events, unused checkpoint blobs, and bindings |
 | GET | /api/sessions/:id/timeline | Full ordered event timeline |
 | POST | /api/sessions/:id/messages | Append or idempotently return a message |
 | POST | /api/sessions/:id/checkpoints | Create a workspace checkpoint |

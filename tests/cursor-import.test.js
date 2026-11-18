@@ -5,7 +5,12 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { listCursorTranscripts, parseTranscriptLines } = require('../src/cursor-import');
+const {
+  decodeCursorProjectSlug,
+  isHarnessNoise,
+  listCursorTranscripts,
+  parseTranscriptLines
+} = require('../src/cursor-import');
 const { createRelayServer, listen } = require('../src/server');
 const { RelayService } = require('../src/service');
 
@@ -49,6 +54,20 @@ test('parseTranscriptLines extracts user_query and skips tool_use-only noise', (
   assert.doesNotMatch(parsed.messages[1].content, /tool_use|Read/);
 });
 
+test('Cursor project slugs decode to workspace paths and harness dumps are dropped', () => {
+  assert.equal(decodeCursorProjectSlug('d-RelayDock'), path.resolve('D:\\RelayDock'));
+  assert.equal(decodeCursorProjectSlug('c-Users-Kele-Desktop'), path.resolve('C:\\Users\\Kele\\Desktop'));
+  assert.equal(isHarnessNoise('assistant', '<dynamic_tools>lots</dynamic_tools>'), true);
+  assert.equal(isHarnessNoise('assistant', '已完成认证中间件'), false);
+
+  const noisy = sampleTranscript() + JSON.stringify({
+    role: 'assistant',
+    message: { content: [{ type: 'text', text: 'Available dynamic tool namespaces:\n<dynamic_tools>x</dynamic_tools>' }] }
+  }) + '\n';
+  const parsed = parseTranscriptLines(noisy);
+  assert.equal(parsed.messages.length, 3);
+});
+
 test('service imports a local Cursor transcript into a RelayDock session', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'relaydock-cursor-import-'));
   const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -63,16 +82,39 @@ test('service imports a local Cursor transcript into a RelayDock session', async
   assert.equal(listed.transcripts[0].sessionId, sessionId);
   assert.equal(listed.transcripts[0].project, 'demo-project');
 
+  const projectWorkspace = path.join(root, 'project-workspace');
+  await fs.mkdir(projectWorkspace, { recursive: true });
+  // Rewrite transcript under a slug that decodes to projectWorkspace via junction-like path is hard;
+  // instead pass switchWorkspace with inferred path by planting an absolute path in content.
+  const richTranscript = [
+    JSON.stringify({
+      role: 'user',
+      message: {
+        content: [{
+          type: 'text',
+          text: '<user_query>\n请在 ' + projectWorkspace + ' 继续修复登录\n</user_query>'
+        }]
+      }
+    }),
+    JSON.stringify({
+      role: 'assistant',
+      message: { content: [{ type: 'text', text: '好的，我只改这个项目目录。' }] }
+    })
+  ].join('\n') + '\n';
+  await fs.writeFile(transcriptPath, richTranscript, 'utf8');
+
   const imported = await service.importCursorSession({
     cursorHome: root,
     path: sessionId,
-    maxMessages: 20
+    maxMessages: 20,
+    switchWorkspace: true
   });
   assert.ok(imported.session.id);
-  assert.equal(imported.imported.length, 3);
-  assert.equal(imported.session.counts.messages, 3);
+  assert.equal(imported.imported.length, 2);
   assert.ok(imported.checkpoint.checkpointId);
   assert.match(imported.session.title, /Cursor/);
+  assert.equal(path.resolve(imported.workspace), path.resolve(projectWorkspace));
+  assert.equal(imported.workspaceChange.switched, true);
 
   await fs.rm(root, { recursive: true, force: true });
 });

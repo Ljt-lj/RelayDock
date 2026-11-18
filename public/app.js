@@ -193,6 +193,13 @@ function renderAll() {
   renderInspector();
 }
 
+function shortenLabel(value, maxChars = 18) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '未命名任务';
+  if (text.length <= maxChars) return text;
+  return text.slice(0, Math.max(1, maxChars - 3)).trimEnd() + '...';
+}
+
 function renderSessions() {
   elements.sessionList.replaceChildren();
   if (!state.sessions.length) {
@@ -201,9 +208,11 @@ function renderSessions() {
     return;
   }
   for (const session of state.sessions) {
-    const button = node('button', 'session-item' + (state.activeSession && state.activeSession.id === session.id ? ' active' : ''));
+    const row = node('div', 'session-row' + (state.activeSession && state.activeSession.id === session.id ? ' active' : ''));
+    const button = node('button', 'session-item');
     button.type = 'button';
-    button.append(node('span', 'session-item-title', session.title));
+    button.title = session.title || '';
+    button.append(node('span', 'session-item-title', shortenLabel(session.title, 18)));
     button.append(node('span', 'session-item-excerpt', session.lastMessage ? session.lastMessage.excerpt : '尚未记录消息'));
     const meta = node('span', 'session-item-meta');
     meta.append(node('span', '', session.counts.messages + ' 消息'));
@@ -211,7 +220,46 @@ function renderSessions() {
     meta.append(node('span', '', formatDate(session.updatedAt)));
     button.append(meta);
     button.addEventListener('click', () => selectSession(session.id).catch((error) => showToast(error.message, true)));
-    elements.sessionList.append(button);
+
+    const remove = node('button', 'session-delete-button');
+    remove.type = 'button';
+    remove.title = '硬删除此接力任务';
+    remove.setAttribute('aria-label', '硬删除此接力任务');
+    remove.textContent = '删除';
+    remove.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteSession(session).catch((error) => showToast(error.message, true));
+    });
+
+    row.append(button, remove);
+    elements.sessionList.append(row);
+  }
+}
+
+async function deleteSession(session) {
+  if (!session || !session.id) return;
+  const label = shortenLabel(session.title, 18);
+  const confirmed = window.confirm('确定硬删除接力任务「' + label + '」？\n将永久删除其时间线、Checkpoint 与绑定，且不可恢复。');
+  if (!confirmed) return;
+  setBusy(true);
+  try {
+    await api('/api/sessions/' + encodeURIComponent(session.id), { method: 'DELETE' });
+    if (state.activeSession && state.activeSession.id === session.id) {
+      state.activeSession = null;
+      state.timeline = [];
+      state.approvals = [];
+      state.packet = null;
+    }
+    await loadOverview(false);
+    if (!state.activeSession && state.sessions[0]) {
+      await selectSession(state.sessions[0].id);
+    } else {
+      renderAll();
+    }
+    showToast('已硬删除「' + label + '」');
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -250,7 +298,8 @@ function renderHeader() {
     elements.sendButton.disabled = true;
     return;
   }
-  elements.activeTitle.textContent = session.title;
+  elements.activeTitle.textContent = shortenLabel(session.title, 28);
+  elements.activeTitle.title = session.title || '';
   const goal = session.contract && session.contract.goal ? session.contract.goal : '尚未填写任务目标';
   elements.activeMeta.textContent = goal;
   const lease = (state.leases || []).find((item) => item.sessionId === session.id);
@@ -615,7 +664,7 @@ async function sendTurn() {
   try {
     const result = await api('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/turn', {
       method: 'POST',
-      body: { providerId, instruction: elements.composerText.value.trim(), maxSteps: 4 }
+      body: { providerId, instruction: elements.composerText.value.trim(), maxSteps: 6 }
     });
     elements.composerText.value = '';
     await refreshActive();
@@ -624,6 +673,8 @@ async function sendTurn() {
       setActiveTab('approvals');
       renderInspector();
       showToast('模型请求执行写操作，请审批');
+    } else if (result.status === 'step_limit') {
+      showToast('工具步数用尽，已强制汇总当前结论', true);
     } else {
       showToast('模型回合已完成');
     }
@@ -640,7 +691,7 @@ async function resolveApproval(approvalId, decision) {
   try {
     await api('/api/approvals/' + encodeURIComponent(approvalId) + '/resolve', {
       method: 'POST',
-      body: { decision, continueTurn: decision === 'approve', maxSteps: 4 }
+      body: { decision, continueTurn: decision === 'approve', maxSteps: 6 }
     });
     await refreshActive();
     state.tab = 'approvals';
@@ -794,13 +845,18 @@ async function openCodexImportModal() {
               body: {
                 path: item.path,
                 maxMessages: 60,
-                createCheckpoint: true
+                createCheckpoint: true,
+                switchWorkspace: true
               }
             });
             closeModal();
             await loadOverview(false);
             await selectSession(result.session.id);
-            showToast('已导入 ' + result.imported.length + ' 条 Codex 消息');
+            const switched = result.workspaceChange && result.workspaceChange.switched;
+            showToast(
+              '已导入 ' + result.imported.length + ' 条 Codex 消息'
+              + (switched ? '，工作区已切换到 ' + pathTail(result.workspace) : '')
+            );
           } catch (error) {
             elements.modalError.textContent = error.message;
             elements.modalError.classList.remove('hidden');
@@ -848,7 +904,8 @@ async function openCursorImportModal() {
         button.append(node('strong', '', item.project || item.sessionId));
         button.append(node('span', '', [
           formatDate(item.mtime),
-          item.sessionId.slice(0, 8)
+          item.sessionId.slice(0, 8),
+          item.workspace ? ('工作区 ' + pathTail(item.workspace)) : '未识别工作区'
         ].filter(Boolean).join(' · ')));
         if (item.preview) button.append(node('span', '', item.preview));
         button.addEventListener('click', async () => {
@@ -858,14 +915,19 @@ async function openCursorImportModal() {
               method: 'POST',
               body: {
                 path: item.path,
-                maxMessages: 60,
-                createCheckpoint: true
+                maxMessages: 40,
+                createCheckpoint: true,
+                switchWorkspace: true
               }
             });
             closeModal();
             await loadOverview(false);
             await selectSession(result.session.id);
-            showToast('已导入 ' + result.imported.length + ' 条 Cursor 消息');
+            const switched = result.workspaceChange && result.workspaceChange.switched;
+            showToast(
+              '已导入 ' + result.imported.length + ' 条 Cursor 消息'
+              + (switched ? '，工作区已切换到 ' + pathTail(result.workspace) : (result.source && result.source.workspace ? '（工作区 ' + pathTail(result.source.workspace) + '）' : ''))
+            );
           } catch (error) {
             elements.modalError.textContent = error.message;
             elements.modalError.classList.remove('hidden');

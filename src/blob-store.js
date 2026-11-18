@@ -27,6 +27,17 @@ class BlobStore {
     if (!/^[a-f0-9]{64}\.json$/.test(ref)) throw new Error('Invalid blob reference');
     return JSON.parse(await fs.readFile(path.join(this.dir, ref), 'utf8'));
   }
+
+  async delete(ref) {
+    if (!/^[a-f0-9]{64}\.json$/.test(ref)) throw new Error('Invalid blob reference');
+    try {
+      await fs.unlink(path.join(this.dir, ref));
+      return true;
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return false;
+      throw error;
+    }
+  }
 }
 
 module.exports = { BlobStore };

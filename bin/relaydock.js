@@ -55,6 +55,7 @@ async function main() {
       '  session:create --title TEXT [--goal TEXT]',
       '  session:list',
       '  session:update --session ID --contract-json JSON',
+      '  session:delete --session ID',
       '  message --session ID --role user|assistant --content TEXT [--provider ID] [--message-id ID]',
       '  checkpoint --session ID [--summary TEXT] [--test-status TEXT]',
       '  packet --session ID [--max-chars 28000]',
@@ -104,6 +105,10 @@ async function main() {
   if (command === 'session:update') {
     const contract = JSON.parse(flags['contract-json'] || '{}');
     return print(await service.updateSession(flags.session, contract));
+  }
+  if (command === 'session:delete') {
+    if (!flags.session) throw new Error('--session is required');
+    return print(await service.deleteSession(flags.session));
   }
   if (command === 'message') {
     return print(await service.recordMessage(flags.session, {

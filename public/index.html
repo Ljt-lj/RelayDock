@@ -26,15 +26,17 @@
 
   <main class="workbench">
     <aside class="sidebar sessions-sidebar">
-      <div class="panel-heading">
-        <div>
-          <p class="eyebrow">Workspace</p>
-          <h2>任务会话</h2>
+      <div class="panel-heading sessions-heading">
+        <div class="panel-heading-top">
+          <div>
+            <p class="eyebrow">Workspace</p>
+            <h2>任务会话</h2>
+          </div>
+          <button id="newSessionButton" class="icon-button primary" title="新建会话" aria-label="新建会话">+</button>
         </div>
-        <div class="heading-actions">
+        <div class="heading-actions import-actions">
           <button id="importCodexButton" class="secondary-button compact-button" type="button" title="导入本机 Codex 会话">导入 Codex</button>
           <button id="importCursorButton" class="secondary-button compact-button" type="button" title="导入本机 Cursor 会话">导入 Cursor</button>
-          <button id="newSessionButton" class="icon-button primary" title="新建会话" aria-label="新建会话">+</button>
         </div>
       </div>
       <div id="sessionList" class="session-list"></div>

@@ -35,7 +35,6 @@ async function walkTranscripts(root, acc = [], options = {}) {
       continue;
     }
     if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
-    // Prefer primary agent transcripts: <uuid>/<uuid>.jsonl
     if (!includeSubagents && /[\\/]subagents[\\/]/i.test(full)) continue;
     acc.push(full);
   }
@@ -65,13 +64,100 @@ function cleanUserText(text) {
   value = value.replace(/<timestamp>\s*[^<]*<\/timestamp>\s*/gi, '').trim();
   const query = value.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/i);
   if (query) return query[1].trim();
-  // Drop common agent harness wrappers when present.
   value = value.replace(/<\/?(user_info|agent_transcripts|communication|citing_code|system_reminder)[^>]*>/gi, ' ').trim();
   return value;
 }
 
 function cleanAssistantText(text) {
-  return String(text || '').trim();
+  let value = String(text || '').trim();
+  // Keep the human-visible reply; drop trailing tool dumps if any leaked into text.
+  value = value.replace(/<\/?(tool_use|tool_result|function_calls)[^>]*>[\s\S]*$/gi, '').trim();
+  return value;
+}
+
+function isHarnessNoise(role, text) {
+  const value = String(text || '');
+  if (!value.trim()) return true;
+  if (/<(dynamic_tools|available_skills|agent_skill|system_reminder|mcp_file_system|functions\.)\b/i.test(value)) {
+    return true;
+  }
+  if (/Available dynamic tool namespaces:/i.test(value)) return true;
+  if (/^You (use tools via function calls|are an AI coding assistant)/i.test(value)) return true;
+  if (role === 'assistant' && value.length > 12000) return true;
+  if (role === 'user' && value.length > 8000 && !/<user_query>/i.test(String(text))) return true;
+  return false;
+}
+
+function decodeCursorProjectSlug(slug) {
+  const parts = String(slug || '').split('-').filter(Boolean);
+  if (parts.length < 2) return null;
+  const drive = parts[0];
+  if (!/^[a-zA-Z]$/.test(drive)) return null;
+  return path.resolve(drive.toUpperCase() + ':' + path.sep + parts.slice(1).join(path.sep));
+}
+
+function extractPathCandidates(text) {
+  const value = String(text || '');
+  // Stop at whitespace so Chinese/English prose after a path is not absorbed.
+  const windows = value.match(/[A-Za-z]:\\[^\s"'<>|*?]+/g) || [];
+  const unix = value.match(/\/(?:Users|home|mnt|opt|var|data)\/[^\s"'<>|*?]+/g) || [];
+  return [...windows, ...unix].map((item) => item.replace(/[),.，。；;]+$/g, ''));
+}
+
+async function pathExistsAsDir(candidate) {
+  try {
+    const stat = await fs.stat(candidate);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function resolveExistingWorkspace(candidates) {
+  const exact = [];
+  const seen = new Set();
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const current = path.resolve(String(raw));
+    if (seen.has(current)) continue;
+    seen.add(current);
+    if (await pathExistsAsDir(current)) exact.push(current);
+  }
+  if (exact.length) {
+    exact.sort((a, b) => b.length - a.length);
+    return exact[0];
+  }
+
+  // Fall back to walking parents only when no candidate exists exactly.
+  for (const raw of candidates) {
+    if (!raw) continue;
+    let current = path.resolve(String(raw));
+    for (let depth = 0; depth < 8; depth += 1) {
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      if (await pathExistsAsDir(current)) return current;
+    }
+  }
+  return null;
+}
+
+async function inferWorkspaceFromTranscript({ project, messages, filePath }) {
+  const candidates = [];
+  const fromSlug = decodeCursorProjectSlug(project);
+  if (fromSlug) candidates.push(fromSlug);
+
+  const sample = (messages || []).slice(-20).map((item) => item.content).join('\n');
+  for (const item of extractPathCandidates(sample)) candidates.push(item);
+  if (filePath) {
+    for (const item of extractPathCandidates(filePath)) candidates.push(item);
+  }
+
+  // Prefer slug decode when it exists as a directory.
+  if (fromSlug && await pathExistsAsDir(fromSlug)) return fromSlug;
+  return resolveExistingWorkspace(candidates);
 }
 
 function parseTranscriptLines(text) {
@@ -92,9 +178,8 @@ function parseTranscriptLines(text) {
     const createdAt = extractTimestamp(raw);
     const content = role === 'user' ? cleanUserText(raw) : cleanAssistantText(raw);
     if (!content) continue;
+    if (isHarnessNoise(role, content)) continue;
     if (content.length > 50000) continue;
-    // Skip assistant turns that were only tool calls with no visible text.
-    if (role === 'assistant' && !content.replace(/\s+/g, '')) continue;
     messages.push({
       role,
       content,
@@ -137,11 +222,17 @@ async function readTranscriptSummary(filePath, options = {}) {
       : '';
     const sessionId = sessionIdFromPath(filePath);
     const project = projectSlugFromPath(filePath, cursorHome);
+    const workspace = await inferWorkspaceFromTranscript({
+      project,
+      messages: parsed.messages,
+      filePath
+    });
     return {
       path: filePath,
       fileName: path.basename(filePath),
       sessionId: String(sessionId),
       project,
+      workspace,
       preview,
       startedAt: firstUser && firstUser.createdAt || null,
       mtimeMs: stat.mtimeMs,
@@ -166,7 +257,6 @@ async function listCursorTranscripts(options = {}) {
     try {
       const summary = await readTranscriptSummary(file, { cursorHome });
       if (projectFilter && summary.project !== projectFilter) continue;
-      // Prefer primary conversation files named like <uuid>/<uuid>.jsonl
       if (!includeSubagents && summary.isSubagent) continue;
       summaries.push(summary);
     } catch {
@@ -182,27 +272,31 @@ async function listCursorTranscripts(options = {}) {
 }
 
 async function loadCursorTranscript(filePath, options = {}) {
-  const maxMessages = Math.max(1, Math.min(200, Number(options.maxMessages) || 60));
+  const maxMessages = Math.max(1, Math.min(200, Number(options.maxMessages) || 40));
   const cursorHome = options.cursorHome || defaultCursorHome();
   const text = await fs.readFile(filePath, 'utf8');
   const parsed = parseTranscriptLines(text);
   const messages = parsed.messages.slice(-maxMessages);
   const firstUser = messages.find((item) => item.role === 'user');
+  const lastUser = [...messages].reverse().find((item) => item.role === 'user');
   const project = projectSlugFromPath(filePath, cursorHome);
-  const titleSeed = firstUser
-    ? firstUser.content.replace(/\s+/g, ' ').slice(0, 80)
+  const workspace = await inferWorkspaceFromTranscript({ project, messages, filePath });
+  const titleSeed = (lastUser || firstUser)
+    ? (lastUser || firstUser).content.replace(/\s+/g, ' ').slice(0, 80)
     : (project || 'Cursor session');
   return {
     path: filePath,
     project,
+    workspace,
     title: 'Cursor · ' + titleSeed,
-    goal: firstUser ? firstUser.content.slice(0, 2000) : '',
+    goal: (lastUser || firstUser) ? (lastUser || firstUser).content.slice(0, 2000) : '',
     sessionId: sessionIdFromPath(filePath),
     messages,
     stats: {
       totalParsed: parsed.messages.length,
       imported: messages.length,
-      truncated: parsed.messages.length > messages.length
+      truncated: parsed.messages.length > messages.length,
+      droppedHarness: Math.max(0, (text.split(/\r?\n/).filter(Boolean).length) - parsed.messages.length)
     }
   };
 }
@@ -227,6 +321,9 @@ module.exports = {
   loadCursorTranscript,
   parseTranscriptLines,
   resolveTranscriptPath,
+  decodeCursorProjectSlug,
+  inferWorkspaceFromTranscript,
+  isHarnessNoise,
   extractTextParts,
   cleanUserText
 };

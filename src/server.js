@@ -199,6 +199,9 @@ async function createRelayServer(options = {}) {
         if (!action && request.method === 'PATCH') {
           return sendJson(response, 200, await service.updateSession(sessionId, await readJsonBody(request)));
         }
+        if (!action && request.method === 'DELETE') {
+          return sendJson(response, 200, await service.deleteSession(sessionId));
+        }
         if (action === 'timeline' && request.method === 'GET') {
           return sendJson(response, 200, { events: await service.timeline(sessionId) });
         }

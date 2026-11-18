@@ -35,4 +35,9 @@ test('ledger assigns per-session sequences, redacts secrets, and reloads persist
   assert.equal(third.sequence, 3);
   assert.equal((await reloaded.list({ sessionId: 'session-a' })).length, 3);
   assert.equal((await reloaded.list({ type: 'message.created' })).length, 4);
+
+  const deleted = await reloaded.deleteSession('session-a');
+  assert.equal(deleted.removedEvents, 3);
+  assert.equal((await reloaded.list({ sessionId: 'session-a' })).length, 0);
+  assert.equal((await reloaded.list({ sessionId: 'session-b' })).length, 1);
 });

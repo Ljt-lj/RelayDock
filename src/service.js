@@ -424,15 +424,24 @@ class RelayService {
       throw serviceError('No importable user/assistant messages found in this Cursor transcript', 'CURSOR_TRANSCRIPT_EMPTY');
     }
 
+    let workspaceChange = null;
+    if (input.switchWorkspace !== false && loaded.workspace) {
+      workspaceChange = await this.maybeSwitchWorkspace(loaded.workspace, { persist: true });
+    }
+
     let session;
     if (input.sessionId) {
       session = await this.getSession(input.sessionId);
     } else {
       session = await this.createSession({
-        title: String(input.title || loaded.title).slice(0, 160),
+        title: input.title || loaded.title,
         goal: String(input.goal || loaded.goal || '').slice(0, 4000),
+        workspace: (workspaceChange && workspaceChange.workspace) || loaded.workspace || this.workspace,
         originProvider: 'cursor',
-        summary: 'Imported from local Cursor transcript ' + path.basename(filePath)
+        summary: 'Imported from local Cursor transcript ' + path.basename(filePath),
+        constraints: loaded.workspace
+          ? ['Focus on this imported Cursor conversation. Ignore unrelated files that happen to share the workspace.']
+          : []
       });
     }
 
@@ -473,6 +482,8 @@ class RelayService {
       path: filePath,
       cursorSessionId: loaded.sessionId,
       project: loaded.project,
+      workspace: loaded.workspace,
+      workspaceChange,
       externalKey,
       importedCount: imported.length,
       stats: loaded.stats
@@ -481,10 +492,13 @@ class RelayService {
     return {
       session: await this.getSession(session.id),
       externalKey,
+      workspace: this.workspace,
+      workspaceChange,
       source: {
         path: filePath,
         cursorSessionId: loaded.sessionId,
-        project: loaded.project
+        project: loaded.project,
+        workspace: loaded.workspace
       },
       imported,
       stats: loaded.stats,
@@ -507,15 +521,25 @@ class RelayService {
     const loaded = await loadCodexRollout(filePath, { maxMessages: input.maxMessages });
     if (!loaded.messages.length) throw serviceError('No importable user/assistant messages found in this Codex rollout', 'CODEX_ROLLOUT_EMPTY');
 
+    const codexWorkspace = loaded.meta && loaded.meta.cwd ? path.resolve(String(loaded.meta.cwd)) : null;
+    let workspaceChange = null;
+    if (input.switchWorkspace !== false && codexWorkspace) {
+      workspaceChange = await this.maybeSwitchWorkspace(codexWorkspace, { persist: true });
+    }
+
     let session;
     if (input.sessionId) {
       session = await this.getSession(input.sessionId);
     } else {
       session = await this.createSession({
-        title: String(input.title || loaded.title).slice(0, 160),
+        title: input.title || loaded.title,
         goal: String(input.goal || loaded.goal || '').slice(0, 4000),
+        workspace: (workspaceChange && workspaceChange.workspace) || codexWorkspace || this.workspace,
         originProvider: 'codex',
-        summary: 'Imported from local Codex rollout ' + path.basename(filePath)
+        summary: 'Imported from local Codex rollout ' + path.basename(filePath),
+        constraints: [
+          'Focus on this imported Codex conversation. Ignore unrelated files that happen to share the workspace.'
+        ]
       });
     }
 
@@ -558,12 +582,15 @@ class RelayService {
       externalKey,
       importedCount: imported.length,
       stats: loaded.stats,
-      cwd: loaded.meta && loaded.meta.cwd || null
+      cwd: loaded.meta && loaded.meta.cwd || null,
+      workspaceChange
     }, { originProvider: 'codex', actor: 'codex-import' });
 
     return {
       session: await this.getSession(session.id),
       externalKey,
+      workspace: this.workspace,
+      workspaceChange,
       source: {
         path: filePath,
         codexSessionId: loaded.sessionId,
@@ -622,13 +649,43 @@ class RelayService {
     return client.testConnection();
   }
 
+  async maybeSwitchWorkspace(candidate, options = {}) {
+    if (!candidate) return null;
+    const resolved = path.resolve(String(candidate));
+    if (resolved === this.workspace) {
+      return { workspace: this.workspace, switched: false, reason: 'already-active' };
+    }
+    try {
+      const info = await this.applyWorkspace(resolved, {
+        persist: options.persist !== false,
+        allowMissingRecent: true
+      });
+      return { workspace: info.workspace, switched: true, reason: 'switched' };
+    } catch (error) {
+      return {
+        workspace: this.workspace,
+        switched: false,
+        reason: error.code || 'WORKSPACE_SWITCH_FAILED',
+        message: error.message
+      };
+    }
+  }
+
+  shortenTitle(value, maxChars = 28) {
+    const title = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!title) return 'Untitled relay task';
+    if (title.length <= maxChars) return title;
+    return title.slice(0, Math.max(1, maxChars - 3)).trimEnd() + '...';
+  }
+
   async createSession(input = {}) {
     await this.init();
     const now = new Date().toISOString();
     const sessionId = crypto.randomUUID();
+    const sessionWorkspace = input.workspace ? path.resolve(String(input.workspace)) : this.workspace;
     const contract = {
-      title: String(input.title || 'Untitled relay task').trim().slice(0, 160),
-      workspace: this.workspace,
+      title: this.shortenTitle(input.title || 'Untitled relay task', 28),
+      workspace: sessionWorkspace,
       goal: String(input.goal || '').trim(),
       constraints: Array.isArray(input.constraints) ? input.constraints.map(String).slice(0, 50) : [],
       acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria.map(String).slice(0, 50) : [],
@@ -650,7 +707,10 @@ class RelayService {
     const current = await this.getSession(sessionId);
     const contract = { ...current.contract };
     for (const key of ['title', 'goal', 'summary']) {
-      if (input[key] !== undefined) contract[key] = String(input[key]).trim().slice(0, key === 'summary' ? 20000 : 2000);
+      if (input[key] !== undefined) {
+        if (key === 'title') contract.title = this.shortenTitle(input.title, 28);
+        else contract[key] = String(input[key]).trim().slice(0, key === 'summary' ? 20000 : 2000);
+      }
     }
     for (const key of ['constraints', 'acceptanceCriteria', 'decisions', 'openIssues', 'nextSteps']) {
       if (input[key] !== undefined) {
@@ -747,6 +807,44 @@ class RelayService {
     return this.sessionFromEvents(events);
   }
 
+  async deleteSession(sessionId) {
+    await this.init();
+    const session = await this.getSession(sessionId);
+    const events = await this.ledger.timeline(sessionId);
+    const blobRefs = new Set();
+    for (const event of events) {
+      if (event.type === 'checkpoint.created' && event.payload && event.payload.blobRef) {
+        blobRefs.add(String(event.payload.blobRef));
+      }
+    }
+
+    const removedBindings = await this.bindings.removeBySession(sessionId);
+    this.leases.delete(sessionId);
+    const removed = await this.ledger.deleteSession(sessionId);
+
+    const deletedBlobs = [];
+    const remaining = await this.ledger.list();
+    const stillUsed = new Set();
+    for (const event of remaining) {
+      if (event.type === 'checkpoint.created' && event.payload && event.payload.blobRef) {
+        stillUsed.add(String(event.payload.blobRef));
+      }
+    }
+    for (const ref of blobRefs) {
+      if (stillUsed.has(ref)) continue;
+      if (await this.blobs.delete(ref)) deletedBlobs.push(ref);
+    }
+
+    return {
+      ok: true,
+      sessionId,
+      title: session.title,
+      removedEvents: removed.removedEvents,
+      removedBindings,
+      deletedBlobs
+    };
+  }
+
   async timeline(sessionId) {
     await this.getSession(sessionId);
     return this.ledger.timeline(sessionId);
@@ -826,17 +924,45 @@ class RelayService {
     return checkpoint;
   }
 
+  evidenceBoundarySequence(events) {
+    let boundary = 0;
+    for (const event of events) {
+      if (
+        event.type === 'cursor.imported'
+        || event.type === 'codex.imported'
+        || event.type === 'handoff.completed'
+        || event.type === 'handoff.paused'
+      ) {
+        boundary = Math.max(boundary, event.sequence || 0);
+      }
+    }
+    return boundary;
+  }
+
   async compilePacket(sessionId, options = {}) {
     const session = await this.getSession(sessionId);
     let checkpoint = await this.loadCheckpoint(sessionId);
     if (!checkpoint) checkpoint = await this.createCheckpoint(sessionId);
     const events = await this.ledger.timeline(sessionId);
+    const boundary = this.evidenceBoundarySequence(events);
+    const messages = events.filter((event) => {
+      if (event.type !== 'message.created') return false;
+      const origin = String(event.payload && event.payload.originProvider || '');
+      // Keep imported source chat and human instructions.
+      if (origin === 'cursor' || origin === 'codex' || origin === 'user') return true;
+      // Drop older provider digests from previous handoffs/workspaces; they can
+      // otherwise re-introduce unrelated Desktop/sizechart conclusions.
+      return (event.sequence || 0) > boundary;
+    });
+    const tools = events.filter((event) => (
+      event.type.startsWith('tool.') && (event.sequence || 0) > boundary
+    ));
     const packet = buildRelayPacket({
       sessionId,
       checkpoint,
       contract: session.contract,
-      messages: events.filter((event) => event.type === 'message.created'),
-      tools: events.filter((event) => event.type.startsWith('tool.')),
+      messages,
+      tools,
       request: options.request,
       maxChars: options.maxChars
     });
@@ -934,10 +1060,21 @@ class RelayService {
         throw error;
       }
 
-      const maxSteps = Math.max(1, Math.min(8, Number(input.maxSteps) || 4));
+      const maxSteps = Math.max(1, Math.min(12, Number(input.maxSteps) || 6));
       const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: packet.markdown + '\n\n## Immediate user instruction\n' + request }
+        {
+          role: 'user',
+          content: [
+            packet.markdown,
+            '',
+            '## Immediate user instruction',
+            request,
+            '',
+            'Stay focused on the conversation goal and imported transcript.',
+            'Do not treat unrelated workspace files as the task unless the user explicitly asked about them.'
+          ].join('\n')
+        }
       ];
 
       for (let step = 0; step < maxSteps; step += 1) {
@@ -1057,13 +1194,46 @@ class RelayService {
         }
       }
 
+      // Step budget exhausted while tools were still being requested: force one
+      // final no-tool answer so the user still gets a usable reply.
+      messages.push({
+        role: 'user',
+        content: [
+          'You have reached the tool-step budget for this handoff.',
+          'Do not request more tools.',
+          'Using only the evidence already gathered, answer the immediate user instruction.',
+          'If evidence is incomplete, say what is known, what is missing, and the next concrete step.'
+        ].join('\n')
+      });
+      const finalCompletion = await client.complete({
+        messages,
+        maxTokens: provider.maxOutputTokens
+      });
+      await this.ledger.append(sessionId, 'message.created', {
+        role: 'assistant',
+        content: finalCompletion.content || 'Reached the tool-step budget before a complete answer.',
+        originProvider: providerId,
+        model: finalCompletion.model,
+        untrusted: true,
+        messageId: crypto.randomUUID(),
+        usage: finalCompletion.usage
+      }, { originProvider: providerId, actor: providerId });
       await this.ledger.append(sessionId, 'handoff.completed', {
         handoffId,
         checkpointId: checkpoint.checkpointId,
         providerId,
-        status: 'step_limit'
+        status: 'step_limit',
+        steps: maxSteps,
+        usage: finalCompletion.usage
       }, { originProvider: providerId, actor: providerId });
-      return { status: 'step_limit', handoffId, checkpointId: checkpoint.checkpointId };
+      return {
+        status: 'step_limit',
+        handoffId,
+        checkpointId: checkpoint.checkpointId,
+        message: finalCompletion.content,
+        usage: finalCompletion.usage,
+        steps: maxSteps
+      };
     } catch (error) {
       if (!(error.code === 'PROVIDER_NOT_CONFIGURED')) {
         const handoff = (await this.ledger.timeline(sessionId)).filter((event) => event.type === 'handoff.requested').slice(-1)[0];

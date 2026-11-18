@@ -78,6 +78,27 @@ test('local API supports the Studio bootstrap, session, checkpoint, packet, and 
   const packet = await packetResponse.json();
   assert.match(packet.markdown, /Verify the end-to-end API/);
 
+  const longSession = await fetch(address.url + '/api/sessions', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      title: 'Cursor · 这是一个非常非常非常非常非常长的默认任务标题需要被截断显示',
+      goal: 'truncate title'
+    })
+  }).then((response) => response.json());
+  assert.ok(longSession.title.length <= 28);
+  assert.match(longSession.title, /\.\.\.$/);
+
+  const deleted = await fetch(address.url + '/api/sessions/' + encodeURIComponent(longSession.id), {
+    method: 'DELETE',
+    headers
+  });
+  assert.equal(deleted.status, 200);
+  const deletedBody = await deleted.json();
+  assert.equal(deletedBody.ok, true);
+  const missing = await fetch(address.url + '/api/sessions/' + encodeURIComponent(longSession.id), { headers });
+  assert.equal(missing.status, 404);
+
   const overview = await fetch(address.url + '/api/overview', {
     headers: { 'x-relaydock-token': bootstrap.token }
   }).then((response) => response.json());

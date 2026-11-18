@@ -32,7 +32,8 @@ Requests with an Origin header must be same-origin. The server rejects cross-ori
 | GET | /api/providers | List Providers without secrets |
 | POST | /api/providers | Create or update a Provider |
 | GET | /api/providers/:id | Read one Provider |
-| PUT | /api/providers/:id/credential | Set a process-memory API Key |
+| PUT | /api/providers/:id/credential | Set and encrypt an API Key |
+| DELETE | /api/providers/:id/credential | Delete a saved encrypted API Key |
 | POST | /api/providers/:id/test | Test the configured endpoint |
 | GET | /api/sessions | List sessions |
 | POST | /api/sessions | Create a session contract |
@@ -310,7 +311,46 @@ Preview/model endpoints are expected to follow OpenAI Chat Completions conventio
 - GET {baseUrl}/models
 - Authorization: Bearer <key>
 
-Provider configuration never stores an inline apiKey. A key can come from apiKeyEnv or PUT /api/providers/:id/credential, which keeps it in process memory only.
+Provider configuration never stores an inline apiKey. Provider metadata is persisted in `providers.json`. A key can come from `apiKeyEnv` or from the Studio/API, in which case it is encrypted with AES-256-GCM and persisted in `credentials.json`.
+
+`POST /api/providers` accepts an optional `apiKey` for convenience:
+
+~~~json
+{
+  "id": "deepseek",
+  "name": "DeepSeek",
+  "baseUrl": "https://api.deepseek.com",
+  "model": "deepseek-chat",
+  "apiKeyEnv": "DEEPSEEK_API_KEY",
+  "contextWindow": 64000,
+  "maxOutputTokens": 8192,
+  "enabled": true,
+  "apiKey": "<plaintext only in the request body>"
+}
+~~~
+
+The key can also be changed independently:
+
+~~~http
+PUT /api/providers/deepseek/credential
+Content-Type: application/json
+x-relaydock-token: <token>
+
+{
+  "apiKey": "<new-key>"
+}
+~~~
+
+Saving a new key encrypts it with a fresh initialization vector. The encrypted record uses the Provider ID as authenticated additional data. Provider API responses never return the plaintext key.
+
+To remove a locally saved key:
+
+~~~http
+DELETE /api/providers/deepseek/credential
+x-relaydock-token: <token>
+~~~
+
+Deleting an encrypted key does not remove an API key supplied through `apiKeyEnv`; that environment fallback remains active until the RelayDock process environment changes.
 
 ## Error Shape
 
@@ -365,8 +405,14 @@ Default location: <workspace>/.relaydock
 .relaydock/
   events.jsonl
   providers.json
+  credentials.json
+  credentials.key
   blobs/<sha256>.json
   approvals/<approval-id>.json
 ~~~
+
+`providers.json` stores non-secret Provider configuration. `credentials.json` stores only AES-256-GCM ciphertext, IVs, authentication tags, and timestamps. By default, RelayDock creates `credentials.key` with a locally generated 32-byte master key and mode `0600`. Alternatively, set `RELAYDOCK_MASTER_KEY` to a Base64-encoded 32-byte key and do not keep a local key file.
+
+This is local encryption at rest, not Windows DPAPI, a hardware-backed keystore, or a cloud KMS. Protect the master key and ciphertext together only as a matched set; losing the master key makes existing saved credentials unrecoverable.
 
 The current MVP uses JSONL instead of SQLite. Events are flushed as append-only lines and reloaded at startup. A partial final line can be ignored after an abrupt shutdown, but no fsync or multi-process write coordination is provided yet.

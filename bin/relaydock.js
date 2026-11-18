@@ -75,7 +75,7 @@ async function main() {
       '  mcp   stdio MCP control plane for Codex/Cursor',
       '  serve also exposes OpenAI-compatible Gateway at /v1',
       '',
-      'Provider credentials are read from the API key environment variable or set through the Studio API.'
+      'Provider credentials use the API key environment variable or AES-256-GCM encrypted local storage.'
     ].join('\n'));
     return;
   }

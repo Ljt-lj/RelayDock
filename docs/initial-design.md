@@ -322,7 +322,7 @@ RelayDock Studio 采用本地工作台形式。
 
 ## 8. 安全与隐私
 
-- 设计目标是由系统凭据管理器持有 API Key；当前 MVP 仅从环境变量或进程内存读取，不写入会话账本、Provider 配置或快照。
+- 设计目标是由系统凭据管理器持有 API Key；当前 MVP 使用 AES-256-GCM 将 Studio 中填写的密钥加密后写入 `credentials.json`，本地主密钥来自 `credentials.key` 或 `RELAYDOCK_MASTER_KEY`。密钥不写入会话账本、Provider 配置或快照。
 - Web UI 默认只监听 `127.0.0.1`。
 - 本地服务使用短期访问令牌和 CSRF 防护。
 - 默认不上传完整仓库，只上传 Relay Packet 所需内容。
@@ -420,7 +420,7 @@ RelayDock/
 | 模型切换 | Studio 交接，或把 Codex/Cursor 指向本地 `/v1` Gateway |
 | Tool Proxy | 三个只读工具和三个审批型工具：文件写入、命令执行、系统时间读取 |
 | 写租约 | 单进程内存租约 |
-| API Key | 环境变量或进程内存，不持久化 |
+| API Key | 环境变量，或使用 AES-256-GCM 加密持久化 |
 | 回传方式 | Markdown / JSON 导出 |
 | 流式输出 | 尚未实现 |
 

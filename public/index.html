@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>RelayDock Studio</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -15,12 +16,13 @@
       <span class="brand-subtitle">Agent Relay Studio</span>
     </div>
     <div class="topbar-status">
-      <span id="healthBadge" class="status-pill"><span class="status-dot"></span><span>连接中</span></span>
-      <button id="workspaceButton" class="workspace-button" type="button" title="配置会话工作区">
-        <span class="workspace-button-label">会话工作区</span>
+      <span id="healthBadge" class="status-pill"><span class="status-dot"></span><span data-i18n="health.connecting">连接中</span></span>
+      <button id="workspaceButton" class="workspace-button" type="button" title="配置会话工作区" data-i18n-title="workspace.configureTitle">
+        <span class="workspace-button-label" data-i18n="workspace.label">会话工作区</span>
         <span id="workspaceLabel" class="workspace-label"></span>
       </button>
-      <button id="refreshButton" class="icon-button" title="刷新" aria-label="刷新">↻</button>
+      <button id="languageToggle" class="language-toggle" type="button" title="Switch to English" aria-label="Switch to English">EN</button>
+      <button id="refreshButton" class="icon-button" title="刷新" aria-label="刷新" data-i18n-title="actions.refresh" data-i18n-aria-label="actions.refresh">↻</button>
     </div>
   </header>
 
@@ -30,26 +32,26 @@
         <div class="panel-heading-top">
           <div>
             <p class="eyebrow">Workspace</p>
-            <h2>任务会话</h2>
+            <h2 data-i18n="sessions.title">任务会话</h2>
           </div>
-          <button id="newSessionButton" class="icon-button primary" title="新建会话" aria-label="新建会话">+</button>
+          <button id="newSessionButton" class="icon-button primary" title="新建会话" aria-label="新建会话" data-i18n-title="sessions.new" data-i18n-aria-label="sessions.new">+</button>
         </div>
         <div class="heading-actions import-actions">
-          <button id="importCodexButton" class="secondary-button compact-button" type="button" title="导入本机 Codex 会话">导入 Codex</button>
-          <button id="importCursorButton" class="secondary-button compact-button" type="button" title="导入本机 Cursor 会话">导入 Cursor</button>
+          <button id="importCodexButton" class="secondary-button compact-button" type="button" title="导入本机 Codex 会话" data-i18n-title="import.codexTitle" data-i18n="import.codex">导入 Codex</button>
+          <button id="importCursorButton" class="secondary-button compact-button" type="button" title="导入本机 Cursor 会话" data-i18n-title="import.cursorTitle" data-i18n="import.cursor">导入 Cursor</button>
         </div>
       </div>
       <div id="sessionList" class="session-list"></div>
       <div class="sidebar-section">
         <div class="section-heading">
-          <h3>模型供应商</h3>
-          <button id="addProviderButton" class="text-icon-button" title="添加供应商" aria-label="添加供应商">+</button>
+          <h3 data-i18n="providers.title">模型供应商</h3>
+          <button id="addProviderButton" class="text-icon-button" title="添加供应商" aria-label="添加供应商" data-i18n-title="providers.add" data-i18n-aria-label="providers.add">+</button>
         </div>
         <div id="providerList" class="provider-list"></div>
       </div>
       <footer class="sidebar-footer">
         <span class="security-dot"></span>
-        <span>仅监听本机 · 密钥不入账本</span>
+        <span data-i18n="security.localOnly">仅监听本机 · 密钥不入账本</span>
       </footer>
     </aside>
 
@@ -57,17 +59,17 @@
       <div class="conversation-header">
         <div class="title-block">
           <p class="eyebrow">Unified task trace</p>
-          <h1 id="activeTitle">选择一个任务</h1>
-          <p id="activeMeta" class="active-meta">RelayDock 会在这里合并 Codex 与外部模型的进展。</p>
+          <h1 id="activeTitle" data-i18n="active.emptyTitle">选择一个任务</h1>
+          <p id="activeMeta" class="active-meta" data-i18n="active.emptyMeta">RelayDock 会在这里合并 Codex 与外部模型的进展。</p>
         </div>
         <div class="header-badges">
-          <div id="timelineModeSwitch" class="mode-switch" role="group" aria-label="时间线显示模式">
-            <button type="button" class="mode-switch-button" data-mode="full" title="显示交接、工具、审批等完整处理信息">完整轨迹</button>
-            <button type="button" class="mode-switch-button" data-mode="chat" title="只显示用户与模型的会话消息">仅会话</button>
+          <div id="timelineModeSwitch" class="mode-switch" role="group" aria-label="时间线显示模式" data-i18n-aria-label="timeline.ariaLabel">
+            <button type="button" class="mode-switch-button" data-mode="full" title="显示交接、工具、审批等完整处理信息" data-i18n-title="timeline.fullTitle" data-i18n="timeline.full">完整轨迹</button>
+            <button type="button" class="mode-switch-button" data-mode="chat" title="只显示用户与模型的会话消息" data-i18n-title="timeline.chatTitle" data-i18n="timeline.chat">仅会话</button>
           </div>
-          <span id="leaseBadge" class="status-pill neutral">无写锁</span>
-          <span id="approvalCount" class="status-pill warning">0 审批</span>
-          <button id="contractButton" class="secondary-button" type="button">任务契约</button>
+          <span id="leaseBadge" class="status-pill neutral" data-i18n="lease.none">无写锁</span>
+          <span id="approvalCount" class="status-pill warning" data-i18n="approvals.count.zero">0 审批</span>
+          <button id="contractButton" class="secondary-button" type="button" data-i18n="contract.button">任务契约</button>
         </div>
       </div>
 
@@ -75,20 +77,20 @@
 
       <div class="composer">
         <div class="composer-toolbar">
-          <label class="select-label">接手模型
+          <label class="select-label"><span data-i18n="composer.model">接手模型</span>
             <select id="providerSelect"></select>
           </label>
-          <span class="composer-hint">外部输出按不可信证据记录</span>
+          <span class="composer-hint" data-i18n="composer.untrustedHint">外部输出按不可信证据记录</span>
         </div>
-        <textarea id="composerText" rows="3" placeholder="描述下一步，或让接手模型继续当前任务…"></textarea>
+        <textarea id="composerText" rows="3" placeholder="描述下一步，或让接手模型继续当前任务…" data-i18n-placeholder="composer.placeholder"></textarea>
         <div class="composer-actions">
           <div class="secondary-actions">
-            <button id="checkpointButton" class="secondary-button" type="button">创建 Checkpoint</button>
-            <button id="packetButton" class="secondary-button" type="button">预览 Relay Packet</button>
-            <button id="exportButton" class="secondary-button" type="button">导出给 Codex</button>
+            <button id="checkpointButton" class="secondary-button" type="button" data-i18n="checkpoint.create">创建 Checkpoint</button>
+            <button id="packetButton" class="secondary-button" type="button" data-i18n="packet.preview">预览 Relay Packet</button>
+            <button id="exportButton" class="secondary-button" type="button" data-i18n="export.action">导出给 Codex</button>
           </div>
           <button id="sendButton" class="primary-button" type="button">
-            <span>交给接手模型</span>
+            <span data-i18n="send.action">交给接手模型</span>
             <span aria-hidden="true">→</span>
           </button>
         </div>
@@ -96,10 +98,10 @@
     </section>
 
     <aside class="inspector">
-      <div class="inspector-tabs" role="tablist" aria-label="检查器">
+      <div class="inspector-tabs" role="tablist" aria-label="检查器" data-i18n-aria-label="inspector.ariaLabel">
         <button class="tab-button active" data-tab="checkpoint" type="button">Checkpoint</button>
         <button class="tab-button" data-tab="packet" type="button">Packet</button>
-        <button class="tab-button" data-tab="approvals" type="button">审批</button>
+        <button class="tab-button" data-tab="approvals" type="button" data-i18n="approvals.tab">审批</button>
         <button class="tab-button" data-tab="diff" type="button">Diff</button>
       </div>
       <div id="inspectorBody" class="inspector-body"></div>
@@ -111,15 +113,15 @@
       <div class="modal-header">
         <div>
           <p class="eyebrow">RelayDock</p>
-          <h2 id="modalTitle">新建会话</h2>
+          <h2 id="modalTitle" data-i18n="sessions.new">新建会话</h2>
         </div>
-        <button id="modalCloseButton" class="icon-button" type="button" aria-label="关闭">×</button>
+        <button id="modalCloseButton" class="icon-button" type="button" aria-label="关闭" data-i18n-aria-label="actions.close">×</button>
       </div>
       <form id="modalForm" class="modal-form"></form>
       <div id="modalError" class="form-error hidden"></div>
       <div class="modal-actions">
-        <button id="modalCancelButton" class="secondary-button" type="button">取消</button>
-        <button id="modalSubmitButton" class="primary-button" type="button">保存</button>
+        <button id="modalCancelButton" class="secondary-button" type="button" data-i18n="actions.cancel">取消</button>
+        <button id="modalSubmitButton" class="primary-button" type="button" data-i18n="actions.save">保存</button>
       </div>
     </section>
   </div>

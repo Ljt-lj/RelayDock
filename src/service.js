@@ -62,7 +62,7 @@ class RelayService {
   constructor(options) {
     this.workspace = path.resolve(options.workspace);
     this.dataDir = path.resolve(options.dataDir || path.join(this.workspace, '.relaydock'));
-    this.credentials = new CredentialStore();
+    this.credentials = new CredentialStore(this.dataDir);
     this.providers = new ProviderStore(this.dataDir);
     this.ledger = new Ledger(this.dataDir, (value) => redactDeep(value, this.credentials.allSecrets()));
     this.blobs = new BlobStore(this.dataDir);
@@ -218,6 +218,7 @@ class RelayService {
     if (!this.ready) {
       this.ready = (async () => {
         await fs.mkdir(this.dataDir, { recursive: true });
+        await this.credentials.load();
         await this.ledger.init();
         await this.providers.list();
         await this.bindings.load();
@@ -813,14 +814,22 @@ class RelayService {
     const existing = input.id ? await this.providers.get(String(input.id).toLowerCase()) : null;
     const provider = validateProvider(input, existing);
     await this.providers.upsert(provider);
-    if (typeof input.apiKey === 'string' && input.apiKey.trim()) this.credentials.set(provider.id, input.apiKey);
+    if (typeof input.apiKey === 'string' && input.apiKey.trim()) {
+      await this.credentials.set(provider.id, input.apiKey);
+    }
     return publicProvider(provider, this.credentials);
   }
 
   async setCredential(providerId, secret) {
     await this.provider(providerId);
-    this.credentials.set(providerId, secret);
+    await this.credentials.set(providerId, secret);
     return { ok: true, configured: true };
+  }
+
+  async clearCredential(providerId) {
+    const provider = await this.provider(providerId);
+    await this.credentials.clear(providerId);
+    return { ok: true, configured: this.credentials.has(provider) };
   }
 
   async testProvider(providerId) {
@@ -1382,7 +1391,7 @@ class RelayService {
         instructionHash: instruction ? sha256(instruction) : null,
         completeTaskFirst: policy.completeTaskFirst,
         maxSteps,
-        credentialSource: this.credentials.memory.has(providerId) ? 'session-memory' : 'environment'
+        credentialSource: this.credentials.source(provider)
       }, { originProvider: 'relaydock', actor: 'user' });
 
       if (!secret) {

@@ -182,8 +182,8 @@ const translations = {
     'provider.apiKeyEnv': '密钥环境变量',
     'provider.contextWindow': '上下文窗口',
     'provider.maxOutputTokens': '最大输出 Tokens',
-    'provider.apiKey': '本次运行密钥',
-    'provider.apiKeyHelp': '只保存在当前 RelayDock 进程内存；不会写入账本。留空则读取环境变量。',
+    'provider.apiKey': 'API 密钥',
+    'provider.apiKeyHelp': '使用本地主密钥加密保存；不会写入账本或 Provider 配置。留空时保留已保存密钥，没有则读取环境变量。',
     'provider.edit': '配置供应商',
     'provider.add': '添加供应商',
     'provider.save': '保存配置',
@@ -374,8 +374,8 @@ const translations = {
     'provider.apiKeyEnv': 'Key environment variable',
     'provider.contextWindow': 'Context window',
     'provider.maxOutputTokens': 'Max output tokens',
-    'provider.apiKey': 'Runtime API key',
-    'provider.apiKeyHelp': 'Stored only in this RelayDock process memory; never written to the ledger. Leave blank to use the environment variable.',
+    'provider.apiKey': 'API key',
+    'provider.apiKeyHelp': 'Encrypted locally with the RelayDock master key; never written to the ledger or provider config. Leave blank to keep the saved key, or to use the environment variable when none is saved.',
     'provider.edit': 'Configure Provider',
     'provider.add': 'Add Provider',
     'provider.save': 'Save Configuration',
@@ -1545,7 +1545,6 @@ function openProviderModal(provider) {
         apiKey: values.apiKey || undefined
       }
     });
-    if (values.apiKey) await api('/api/providers/' + encodeURIComponent(saved.id) + '/credential', { method: 'PUT', body: { apiKey: values.apiKey } });
     await loadOverview(false);
     try {
       const result = await api('/api/providers/' + encodeURIComponent(saved.id) + '/test', { method: 'POST', body: {} });

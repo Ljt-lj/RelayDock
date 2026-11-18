@@ -173,6 +173,9 @@ async function createRelayServer(options = {}) {
           const body = await readJsonBody(request);
           return sendJson(response, 200, await service.setCredential(providerId, body.apiKey));
         }
+        if (action === 'credential' && request.method === 'DELETE') {
+          return sendJson(response, 200, await service.clearCredential(providerId));
+        }
         if (action === 'test' && request.method === 'POST') {
           return sendJson(response, 200, await service.testProvider(providerId));
         }

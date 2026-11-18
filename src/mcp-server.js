@@ -30,6 +30,10 @@ function tools() {
         decisions: { type: 'array', items: { type: 'string' } },
         openIssues: { type: 'array', items: { type: 'string' } },
         nextSteps: { type: 'array', items: { type: 'string' } },
+        completeTaskFirst: { type: 'boolean', default: true, description: 'Default task constraint: keep making progress and request missing protected capabilities instead of stopping early.' },
+        maxSteps: { type: 'number', minimum: 1, maximum: 100, default: 32, description: 'Persistent tool-step budget for normal turns and approval continuations.' },
+        predecessorSessionId: { type: 'string', description: 'Optional source session whose relay lineage this task continues' },
+        lineageId: { type: 'string', description: 'Optional explicit lineage id when no predecessor session is supplied' },
         originProvider: { type: 'string', description: 'codex, cursor, or another platform id' },
         externalKey: { type: 'string', description: 'Optional stable key that binds this platform conversation to the RelayDock session' }
       },
@@ -60,6 +64,8 @@ function tools() {
         decisions: { type: 'array', items: { type: 'string' } },
         openIssues: { type: 'array', items: { type: 'string' } },
         nextSteps: { type: 'array', items: { type: 'string' } },
+        completeTaskFirst: { type: 'boolean', description: 'Whether the completion-first task constraint is enabled.' },
+        maxSteps: { type: 'number', minimum: 1, maximum: 100, description: 'Persistent tool-step budget for this task.' },
         originProvider: { type: 'string' }
       },
       required: ['sessionId'],
@@ -118,25 +124,25 @@ function tools() {
         sessionId: { type: 'string' },
         providerId: { type: 'string' },
         instruction: { type: 'string' },
-        maxSteps: { type: 'number' }
+        maxSteps: { type: 'number', minimum: 1, maximum: 100, description: 'Optional one-turn override. Omit to use the task setting.' }
       },
       required: ['sessionId'],
       additionalProperties: false
     }),
-    tool('relaydock_approval_list', 'List pending mutation approvals.', {
+    tool('relaydock_approval_list', 'List pending protected-tool approvals.', {
       type: 'object',
       properties: {
         sessionId: { type: 'string' }
       },
       additionalProperties: false
     }),
-    tool('relaydock_approval_resolve', 'Approve or reject a pending mutation. Optionally continue the paused turn.', {
+    tool('relaydock_approval_resolve', 'Approve or reject a pending protected-tool action. The paused turn continues by default.', {
       type: 'object',
       properties: {
         approvalId: { type: 'string' },
         decision: { type: 'string', enum: ['approve', 'reject'] },
-        continueTurn: { type: 'boolean' },
-        maxSteps: { type: 'number' }
+        continueTurn: { type: 'boolean', default: true, description: 'Set false to execute or reject without resuming the receiving model.' },
+        maxSteps: { type: 'number', minimum: 1, maximum: 100, description: 'Optional continuation override. Omit to use the task setting.' }
       },
       required: ['approvalId', 'decision'],
       additionalProperties: false
@@ -267,7 +273,7 @@ async function callTool(service, name, args = {}) {
     case 'relaydock_approval_resolve':
       return service.resolveApproval(args.approvalId, {
         decision: args.decision,
-        continueTurn: Boolean(args.continueTurn),
+        continueTurn: args.continueTurn !== false,
         maxSteps: args.maxSteps
       });
     case 'relaydock_export':

@@ -59,9 +59,9 @@ async function main() {
       '  message --session ID --role user|assistant --content TEXT [--provider ID] [--message-id ID]',
       '  checkpoint --session ID [--summary TEXT] [--test-status TEXT]',
       '  packet --session ID [--max-chars 28000]',
-      '  turn --session ID [--provider deepseek] [--instruction TEXT]',
+      '  turn --session ID [--provider deepseek] [--instruction TEXT] [--max-steps 32]',
       '  approval:list [--session ID]',
-      '  approval:resolve --approval ID --decision approve|reject [--continue]',
+      '  approval:resolve --approval ID --decision approve|reject [--continue] [--max-steps 32]',
       '  provider:list',
       '  export --session ID [--format markdown|json]',
       '  workspace:get',
@@ -131,7 +131,8 @@ async function main() {
   if (command === 'turn') {
     return print(await service.runTurn(flags.session, {
       providerId: flags.provider || 'deepseek',
-      instruction: flags.instruction || ''
+      instruction: flags.instruction || '',
+      maxSteps: flags['max-steps'] === undefined ? undefined : Number(flags['max-steps'])
     }));
   }
   if (command === 'approval:list') return print({ approvals: await service.pendingApprovals(flags.session || null) });
@@ -140,7 +141,7 @@ async function main() {
     return print(await service.resolveApproval(flags.approval, {
       decision: flags.decision === 'reject' ? 'reject' : 'approve',
       continueTurn: Boolean(flags.continue),
-      maxSteps: Number(flags['max-steps']) || 4
+      maxSteps: flags['max-steps'] === undefined ? undefined : Number(flags['max-steps'])
     }));
   }
   if (command === 'provider:list') return print({ providers: await service.providerList() });

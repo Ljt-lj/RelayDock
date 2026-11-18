@@ -11,7 +11,7 @@
     "start": "node bin/relaydock.js serve",
     "dev": "node --watch bin/relaydock.js serve",
     "test": "node --test",
-    "check": "node --check src/server.js && node --check src/config.js && node --check src/ledger.js && node --check src/context-compiler.js && node --check src/mcp-server.js && node --check src/gateway.js && node --check src/bindings.js && node --check src/service.js && node --check src/codex-import.js && node --check src/cursor-import.js"
+    "check": "node --check src/server.js && node --check src/config.js && node --check src/ledger.js && node --check src/context-compiler.js && node --check src/task-policy.js && node --check src/mcp-server.js && node --check src/gateway.js && node --check src/bindings.js && node --check src/service.js && node --check src/codex-import.js && node --check src/cursor-import.js"
   },
   "engines": {
     "node": ">=20"

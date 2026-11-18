@@ -15,6 +15,31 @@ test('MCP tool catalog covers the bridge control plane', () => {
   assert.ok(names.includes('relaydock_checkpoint_create'));
   assert.ok(names.includes('relaydock_packet_compile'));
   assert.ok(names.includes('relaydock_export'));
+  const resolve = tools().find((item) => item.name === 'relaydock_approval_resolve');
+  assert.equal(resolve.inputSchema.properties.continueTurn.default, true);
+});
+
+test('MCP approval resolution continues the paused turn by default', async () => {
+  const calls = [];
+  const service = {
+    async resolveApproval(approvalId, input) {
+      calls.push({ approvalId, input });
+      return { status: 'resolved', decision: input.decision };
+    }
+  };
+
+  await callTool(service, 'relaydock_approval_resolve', {
+    approvalId: 'approval-1',
+    decision: 'approve'
+  });
+  await callTool(service, 'relaydock_approval_resolve', {
+    approvalId: 'approval-2',
+    decision: 'approve',
+    continueTurn: false
+  });
+
+  assert.equal(calls[0].input.continueTurn, true);
+  assert.equal(calls[1].input.continueTurn, false);
 });
 
 test('MCP tools can create a bound session and record Codex evidence', async () => {

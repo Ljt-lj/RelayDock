@@ -89,7 +89,7 @@ const TOOL_DEFINITIONS = Object.freeze([
     type: 'function',
     function: {
       name: 'propose_run_command',
-      description: 'Propose a non-shell command in the workspace. Requires explicit user approval and stops the current turn.',
+      description: 'Propose a non-shell command in the workspace. Requires explicit user approval and stops the current turn. For PowerShell, use command powershell.exe and pass -NoProfile, -NonInteractive, -Command, then the script as separate args.',
       parameters: {
         type: 'object',
         properties: {
@@ -102,11 +102,32 @@ const TOOL_DEFINITIONS = Object.freeze([
         additionalProperties: false
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_get_current_time',
+      description: 'Propose reading the current local system time with Get-Date. Use this instead of guessing when the user asks for the current time or date. Requires explicit user approval and stops the current turn.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string' }
+        },
+        required: ['reason'],
+        additionalProperties: false
+      }
+    }
   }
 ]);
 
 const READ_TOOLS = new Set(['list_files', 'read_file', 'search_text']);
-const MUTATION_TOOLS = new Set(['propose_write_file', 'propose_run_command']);
+const MUTATION_TOOLS = new Set(['propose_write_file', 'propose_run_command', 'propose_get_current_time']);
+
+const ACTION_TOOL_NAMES = Object.freeze({
+  write_file: 'propose_write_file',
+  run_command: 'propose_run_command',
+  get_current_time: 'propose_get_current_time'
+});
 
 function parseArguments(raw) {
   if (!raw) return {};
@@ -124,12 +145,20 @@ function publicApproval(record) {
     sessionId: record.sessionId,
     providerId: record.providerId,
     toolCallId: record.toolCallId,
+    toolName: record.toolName || toolNameForAction(record.action),
+    handoffId: record.handoffId || null,
+    checkpointId: record.checkpointId || null,
+    lineageId: record.lineageId || null,
     workspace: record.workspace || null,
     actionType: record.action.type,
     summary: record.action.summary,
     preview: record.action.preview,
     createdAt: record.createdAt
   };
+}
+
+function toolNameForAction(action) {
+  return ACTION_TOOL_NAMES[action && action.type] || null;
 }
 
 class ToolProxy {
@@ -215,14 +244,36 @@ class ToolProxy {
         summary: 'Run ' + args.command + (argsList.length ? ' ' + argsList.join(' ') : ''),
         preview: 'Run without a shell in ' + (path.relative(this.workspace, cwd) || '.') + ': ' + args.command + (argsList.length ? ' ' + argsList.join(' ') : '')
       };
+    } else if (name === 'propose_get_current_time') {
+      action = {
+        type: 'get_current_time',
+        reason: String(args.reason || ''),
+        summary: 'Read the current system time with Get-Date',
+        preview: 'Run Get-Date and return the current local time with its UTC offset.'
+      };
     } else {
       throw new Error('Unknown mutation tool: ' + name);
     }
+    const rawArguments = typeof toolCall.function.arguments === 'string'
+      ? toolCall.function.arguments
+      : JSON.stringify(args);
     const record = {
       approvalId,
       sessionId: context.sessionId,
       providerId: context.providerId,
       toolCallId: toolCall.id,
+      toolName: name,
+      toolCall: {
+        id: toolCall.id,
+        type: toolCall.type || 'function',
+        function: {
+          name,
+          arguments: rawArguments
+        }
+      },
+      handoffId: context.handoffId || null,
+      checkpointId: context.checkpointId || null,
+      lineageId: context.lineageId || null,
       workspace: path.resolve(context.workspace || this.workspace),
       action,
       createdAt: new Date().toISOString()
@@ -241,12 +292,16 @@ class ToolProxy {
   }
 
   async listPending() {
+    return (await this.listPendingRecords()).map(publicApproval);
+  }
+
+  async listPendingRecords() {
     await fs.mkdir(this.approvalDir, { recursive: true });
     const files = (await fs.readdir(this.approvalDir)).filter((name) => name.endsWith('.json'));
     const records = [];
     for (const file of files) {
       const record = await readJson(path.join(this.approvalDir, file), null);
-      if (record) records.push(publicApproval(record));
+      if (record) records.push(record);
     }
     return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
@@ -298,7 +353,44 @@ class ToolProxy {
         return result;
       }
     }
+    if (action.type === 'get_current_time') {
+      return this.executeCurrentTime();
+    }
     throw new Error('Unsupported approved action');
+  }
+
+  async executeCurrentTime() {
+    const isWindows = process.platform === 'win32';
+    const command = isWindows ? 'powershell.exe' : 'date';
+    const args = isWindows
+      ? ['-NoProfile', '-NonInteractive', '-Command', 'Get-Date -Format o']
+      : ['+%Y-%m-%dT%H:%M:%S%z'];
+    try {
+      const completed = await execFileAsync(command, args, {
+        cwd: this.workspace,
+        env: this.safeEnvironment(),
+        shell: false,
+        windowsHide: true,
+        timeout: this.timeoutMs,
+        maxBuffer: this.maxOutputBytes
+      });
+      const output = this.sanitize(String(completed.stdout || '')).trim().slice(0, this.maxOutputBytes);
+      if (!output) throw Object.assign(new Error('The system time command returned no output'), { code: 'CURRENT_TIME_FAILED' });
+      return {
+        summary: 'Read the current system time',
+        output,
+        exitCode: 0
+      };
+    } catch (error) {
+      const output = this.sanitize(String(error.stdout || '') + String(error.stderr || error.message || '')).trim().slice(0, this.maxOutputBytes);
+      return {
+        ok: false,
+        summary: 'Failed to read the current system time',
+        output,
+        exitCode: typeof error.code === 'number' ? error.code : 1,
+        code: 'CURRENT_TIME_FAILED'
+      };
+    }
   }
 
   safeEnvironment() {
@@ -309,4 +401,4 @@ class ToolProxy {
   }
 }
 
-module.exports = { TOOL_DEFINITIONS, ToolProxy, parseArguments, publicApproval };
+module.exports = { TOOL_DEFINITIONS, ToolProxy, parseArguments, publicApproval, toolNameForAction };

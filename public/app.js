@@ -49,6 +49,15 @@ const translations = {
     'sessions.acceptance': '验收标准（每行一条）',
     'sessions.constraints': '约束（每行一条）',
     'sessions.createAction': '创建会话',
+    'sessions.status.waitingApproval': '等待审批',
+    'sessions.status.running': '运行中',
+    'sessions.status.workspaceBusy': '工作区占用',
+    'sessions.status.workspaceApprovalBlocked': '工作区审批阻塞',
+    'sessions.status.lineageApprovalBlocked': '接力任务待审批',
+    'sessions.status.approvalBlocked': '审批阻塞',
+    'sessions.deleteBlockedApproval': '任务等待审批，处理完成后才能删除',
+    'sessions.deleteBlockedRelatedApproval': '关联任务等待审批，处理完成后才能删除',
+    'sessions.deleteBlockedRunning': '任务运行中，结束后才能删除',
     'providers.title': '模型供应商',
     'providers.add': '添加供应商',
     'providers.configured': '已配置',
@@ -93,13 +102,31 @@ const translations = {
     'approvals.count': '{count} 审批',
     'approvals.count.one': '{count} 审批',
     'approvals.tab': '审批',
-    'approvals.title': '写操作审批',
-    'approvals.body': '批准后才执行，并在执行前检查工作区冲突。',
+    'approvals.title': '工具审批',
+    'approvals.body': '受保护工具批准后才执行；当前任务及其关联工作区、接力任务会保持阻塞。',
     'approvals.empty': '没有待审批操作。',
     'approvals.fileWrite': '文件写入',
     'approvals.command': '命令执行',
     'approvals.reject': '拒绝',
     'approvals.approve': '批准并继续',
+    'approvals.systemTime': '读取系统时间',
+    'approvals.tool': '工具执行',
+    'task.pending': '当前任务正在提交操作',
+    'task.executing': '当前任务正在执行',
+    'task.waitingApproval': '当前任务正在等待工具审批',
+    'task.relatedApproval': '{label}，请先处理关联审批',
+    'task.busy': '当前任务或工作区正在执行其他操作',
+    'task.missing': '当前任务不存在',
+    'task.approvalPending': '当前审批正在提交',
+    'task.anotherApproval': '当前任务还有另一项待审批工具',
+    'task.workspaceApproval': '同一工作区还有待审批工具',
+    'task.lineageApproval': '同一接力任务线还有待审批工具',
+    'task.workspaceRunning': '同一工作区还有任务正在执行',
+    'lease.waitingApproval': '等待工具审批',
+    'lease.running': '{provider} 执行中',
+    'lease.currentTask': '当前任务',
+    'lease.otherTask': '另一个任务',
+    'lease.workspaceHeld': '工作区被 {provider} 占用',
     'composer.model': '接手模型',
     'composer.untrustedHint': '外部输出按不可信证据记录',
     'composer.placeholder': '描述下一步，或让接手模型继续当前任务…',
@@ -127,6 +154,14 @@ const translations = {
     'contract.nextSteps': '下一步（每行一条）',
     'contract.save': '保存契约',
     'contract.updated': '任务契约已更新',
+    'contract.completeFirst': '完成优先',
+    'contract.completeFirstHelp': '需要未注册能力时，先申请受保护工具权限并继续推进，而不是提前结束任务。',
+    'contract.maxSteps': '最大工具步数',
+    'contract.maxStepsHelp': '默认 32，可按任务复杂度调整。',
+    'contract.enabled': '已开启',
+    'contract.disabled': '已关闭',
+    'contract.toolSteps': '{count} 步',
+    'contract.toolSteps.one': '{count} 步',
     'packet.preview': '预览 Relay Packet',
     'packet.title': 'Relay Packet',
     'packet.body': '接收模型实际看到的预算化上下文。',
@@ -151,13 +186,15 @@ const translations = {
     'diff.root': 'Diff 根目录：{path}',
     'diff.empty': '没有未提交改动。',
     'toast.configureProvider': '请先配置模型供应商',
-    'toast.approvalRequired': '模型请求执行写操作，请审批',
+    'toast.approvalRequired': '模型请求执行受保护工具，请审批',
     'toast.stepLimit': '工具步数用尽，已强制汇总当前结论',
     'toast.turnComplete': '模型回合已完成',
     'toast.approved': '操作已批准并继续执行',
     'toast.rejected': '操作已拒绝',
     'errors.requestFailed': '请求失败',
     'errors.exportFailed': '导出失败',
+    'errors.maxStepsRange': '最大工具步数必须是 1 到 100 之间的整数。',
+    'errors.writeLeaseBusy': '当前任务或同一工作区已有任务正在运行，请稍后重试',
     'import.codex': '导入 Codex',
     'import.codexTitle': '导入本机 Codex 会话',
     'import.codexNotFound': '未在 {path} 找到 rollout 文件。',
@@ -241,6 +278,15 @@ const translations = {
     'sessions.acceptance': 'Acceptance criteria (one per line)',
     'sessions.constraints': 'Constraints (one per line)',
     'sessions.createAction': 'Create Session',
+    'sessions.status.waitingApproval': 'Waiting approval',
+    'sessions.status.running': 'Running',
+    'sessions.status.workspaceBusy': 'Workspace busy',
+    'sessions.status.workspaceApprovalBlocked': 'Workspace approval block',
+    'sessions.status.lineageApprovalBlocked': 'Relay approval block',
+    'sessions.status.approvalBlocked': 'Approval block',
+    'sessions.deleteBlockedApproval': 'This task is waiting for approval and cannot be deleted until it is resolved',
+    'sessions.deleteBlockedRelatedApproval': 'A related task is waiting for approval and this task cannot be deleted until it is resolved',
+    'sessions.deleteBlockedRunning': 'This task is running and can be deleted only after it finishes',
     'providers.title': 'Model Providers',
     'providers.add': 'Add provider',
     'providers.configured': 'Configured',
@@ -285,13 +331,31 @@ const translations = {
     'approvals.count': '{count} approvals',
     'approvals.count.one': '{count} approval',
     'approvals.tab': 'Approvals',
-    'approvals.title': 'Write Approvals',
-    'approvals.body': 'Actions run only after approval, following a workspace conflict check.',
+    'approvals.title': 'Tool Approvals',
+    'approvals.body': 'Protected tools run only after approval; the current task, related workspace, and relay lineage remain blocked.',
     'approvals.empty': 'No approvals pending.',
     'approvals.fileWrite': 'File write',
     'approvals.command': 'Command execution',
     'approvals.reject': 'Reject',
     'approvals.approve': 'Approve and Continue',
+    'approvals.systemTime': 'Read system time',
+    'approvals.tool': 'Tool execution',
+    'task.pending': 'This task is submitting an operation',
+    'task.executing': 'This task is running',
+    'task.waitingApproval': 'This task is waiting for tool approval',
+    'task.relatedApproval': '{label}; resolve the related approval first',
+    'task.busy': 'This task or its workspace is already running another operation',
+    'task.missing': 'The current task no longer exists',
+    'task.approvalPending': 'This approval is already being submitted',
+    'task.anotherApproval': 'This task has another tool approval pending',
+    'task.workspaceApproval': 'The same workspace has another tool approval pending',
+    'task.lineageApproval': 'The same relay lineage has another tool approval pending',
+    'task.workspaceRunning': 'Another task is running in the same workspace',
+    'lease.waitingApproval': 'Waiting for tool approval',
+    'lease.running': '{provider} is running',
+    'lease.currentTask': 'Current task',
+    'lease.otherTask': 'Another task',
+    'lease.workspaceHeld': 'Workspace held by {provider}',
     'composer.model': 'Takeover model',
     'composer.untrustedHint': 'External output is recorded as untrusted evidence',
     'composer.placeholder': 'Describe the next step, or ask the takeover model to continue this task…',
@@ -319,6 +383,14 @@ const translations = {
     'contract.nextSteps': 'Next steps (one per line)',
     'contract.save': 'Save Contract',
     'contract.updated': 'Task contract updated',
+    'contract.completeFirst': 'Completion First',
+    'contract.completeFirstHelp': 'When a required capability is not registered, request a protected tool approval and keep progressing instead of ending the task early.',
+    'contract.maxSteps': 'Maximum tool steps',
+    'contract.maxStepsHelp': 'Defaults to 32 and can be adjusted for task complexity.',
+    'contract.enabled': 'Enabled',
+    'contract.disabled': 'Disabled',
+    'contract.toolSteps': '{count} steps',
+    'contract.toolSteps.one': '{count} step',
     'packet.preview': 'Preview Relay Packet',
     'packet.title': 'Relay Packet',
     'packet.body': 'The budgeted context the receiving model will actually see.',
@@ -343,13 +415,15 @@ const translations = {
     'diff.root': 'Diff root: {path}',
     'diff.empty': 'No uncommitted changes.',
     'toast.configureProvider': 'Configure a model provider first',
-    'toast.approvalRequired': 'The model requested a write action. Review the approval.',
+    'toast.approvalRequired': 'The model requested a protected tool. Review the approval.',
     'toast.stepLimit': 'Tool step limit reached; the current conclusion was summarized',
     'toast.turnComplete': 'Model turn completed',
     'toast.approved': 'Action approved; execution will continue',
     'toast.rejected': 'Action rejected',
     'errors.requestFailed': 'Request failed',
     'errors.exportFailed': 'Export failed',
+    'errors.maxStepsRange': 'Maximum tool steps must be an integer between 1 and 100.',
+    'errors.writeLeaseBusy': 'This task or another task in the same workspace is already running. Try again later.',
     'import.codex': 'Import Codex',
     'import.codexTitle': 'Import a Local Codex Session',
     'import.codexNotFound': 'No rollout files found in {path}.',
@@ -407,6 +481,12 @@ const state = {
   tab: 'checkpoint',
   modalMode: null,
   busy: false,
+  leases: [],
+  approvalGates: [],
+  pendingTurns: new Set(),
+  pendingApprovals: new Set(),
+  refreshPromise: null,
+  refreshSessionId: null,
   timelineMode: localStorage.getItem(TIMELINE_MODE_KEY) === 'chat' ? 'chat' : 'full'
 };
 
@@ -509,6 +589,141 @@ function shortPath(value) {
   return value.length > 70 ? '…' + value.slice(-69) : value;
 }
 
+function normalizedWorkspace(value) {
+  return String(value || '')
+    .replace(/\//g, '\\')
+    .replace(/\\+$/g, '')
+    .toLowerCase();
+}
+
+function leaseForSession(sessionId) {
+  return (state.leases || []).find((lease) => lease.sessionId === sessionId) || null;
+}
+
+function leaseForWorkspace(session, exceptSessionId = null) {
+  if (!session || !session.workspace) return null;
+  const workspace = normalizedWorkspace(session.workspace);
+  return (state.leases || []).find((lease) => (
+    lease.sessionId !== exceptSessionId
+    && lease.sessionId !== session.id
+    && normalizedWorkspace(lease.workspace) === workspace
+  )) || null;
+}
+
+function sessionLineageId(session) {
+  return String(session && session.contract && session.contract.lineageId || session && session.id || '');
+}
+
+function approvalGateForSession(sessionId) {
+  return (state.approvalGates || []).find((gate) => gate.sessionId === sessionId) || null;
+}
+
+function approvalGateConflictForSession(session, ignoreApprovalId = null) {
+  if (!session) return null;
+  const workspace = normalizedWorkspace(session.workspace);
+  const lineageId = sessionLineageId(session);
+  return (state.approvalGates || []).find((gate) => (
+    gate.approvalId !== ignoreApprovalId
+    && gate.sessionId !== session.id
+    && (
+      (workspace && normalizedWorkspace(gate.workspace) === workspace)
+      || (lineageId && String(gate.lineageId || '') === lineageId)
+    )
+  )) || null;
+}
+
+function blockingApprovalGateForSession(session, ignoreApprovalId = null) {
+  if (!session) return null;
+  const workspace = normalizedWorkspace(session.workspace);
+  const lineageId = sessionLineageId(session);
+  return (state.approvalGates || []).find((gate) => (
+    gate.approvalId !== ignoreApprovalId
+    && (
+      gate.sessionId === session.id
+      || (workspace && normalizedWorkspace(gate.workspace) === workspace)
+      || (lineageId && String(gate.lineageId || '') === lineageId)
+    )
+  )) || null;
+}
+
+function approvalGateConflictLabel(session, gate) {
+  if (!session || !gate) return '';
+  if (normalizedWorkspace(gate.workspace) === normalizedWorkspace(session.workspace)) {
+    return t('sessions.status.workspaceApprovalBlocked');
+  }
+  if (String(gate.lineageId || '') === sessionLineageId(session)) {
+    return t('sessions.status.lineageApprovalBlocked');
+  }
+  return t('sessions.status.approvalBlocked');
+}
+
+function pendingSessionForWorkspace(session) {
+  if (!session || !session.workspace) return null;
+  const workspace = normalizedWorkspace(session.workspace);
+  return state.sessions.find((item) => (
+    item.id !== session.id
+    && isSessionRunning(item.id)
+    && normalizedWorkspace(item.workspace) === workspace
+  )) || null;
+}
+
+function sessionActivity(session) {
+  if (!session) return { lease: null, pending: false, approvalGate: null, conflict: null };
+  const lease = leaseForSession(session.id);
+  const pending = state.pendingTurns.has(session.id) || state.pendingApprovals.has(session.id);
+  const approvalGate = approvalGateForSession(session.id);
+  const workspaceConflict = leaseForWorkspace(session);
+  const approvalConflict = approvalGateConflictForSession(session);
+  const pendingConflict = pendingSessionForWorkspace(session);
+  const conflict = lease || pending || approvalGate
+    ? null
+    : workspaceConflict || approvalConflict || (pendingConflict ? {
+      sessionId: pendingConflict.id,
+      providerId: t('lease.otherTask'),
+      pending: true
+    } : null);
+  return { lease, pending, approvalGate, conflict };
+}
+
+function isSessionRunning(sessionId) {
+  return Boolean(
+    leaseForSession(sessionId)
+    || approvalGateForSession(sessionId)
+    || state.pendingTurns.has(sessionId)
+    || state.pendingApprovals.has(sessionId)
+  );
+}
+
+function sessionActionBlocker(session) {
+  const activity = sessionActivity(session);
+  if (activity.pending) return t('task.pending');
+  if (activity.lease) return t('task.executing');
+  if (activity.approvalGate) return t('task.waitingApproval');
+  if (activity.conflict && activity.conflict.approvalId) {
+    return t('task.relatedApproval', { label: approvalGateConflictLabel(session, activity.conflict) });
+  }
+  if (activity.conflict) return t('task.busy');
+  return '';
+}
+
+function approvalResolutionBlocker(session, approvalId) {
+  if (!session) return t('task.missing');
+  if (state.pendingApprovals.has(session.id)) return t('task.approvalPending');
+  const lease = leaseForSession(session.id) || leaseForWorkspace(session);
+  if (lease) return t('task.busy');
+  const gate = blockingApprovalGateForSession(session, approvalId);
+  if (gate) {
+    if (gate.sessionId === session.id) return t('task.anotherApproval');
+    if (normalizedWorkspace(gate.workspace) === normalizedWorkspace(session.workspace)) {
+      return t('task.workspaceApproval');
+    }
+    return t('task.lineageApproval');
+  }
+  const pendingConflict = pendingSessionForWorkspace(session);
+  if (pendingConflict) return t('task.workspaceRunning');
+  return '';
+}
+
 function showToast(message, error = false) {
   elements.toast.textContent = message;
   elements.toast.className = 'toast' + (error ? ' error' : '');
@@ -525,12 +740,17 @@ async function api(path, options = {}) {
     body: options.body === undefined ? undefined : JSON.stringify(options.body)
   });
   if (!response.ok) {
-      let detail = t('errors.requestFailed');
+    let detail = t('errors.requestFailed');
+    let code = 'REQUEST_FAILED';
     try {
       const body = await response.json();
       detail = body.error && body.error.message ? body.error.message : detail;
+      code = body.error && body.error.code ? body.error.code : code;
     } catch {}
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.code = code;
+    error.status = response.status;
+    throw error;
   }
   const type = response.headers.get('content-type') || '';
   return type.includes('application/json') ? response.json() : response.text();
@@ -560,7 +780,8 @@ async function loadOverview(selectFirst = false) {
   state.sessions = data.sessions;
   state.providers = data.providers;
   state.approvals = data.approvals;
-  state.leases = data.leases;
+  state.leases = data.leases || [];
+  state.approvalGates = data.approvalGates || [];
   state.workspace = data.workspace || state.workspace;
   state.defaultWorkspace = data.defaultWorkspace || data.workspace || state.defaultWorkspace;
   state.recentWorkspaces = data.recentWorkspaces || [];
@@ -580,6 +801,13 @@ async function loadOverview(selectFirst = false) {
 
 function openWorkspaceModal() {
   const session = state.activeSession;
+  if (session) {
+    const blocker = sessionActionBlocker(session);
+    if (blocker) {
+      showToast(blocker, true);
+      return;
+    }
+  }
   const fields = [];
   fields.push(modalField(
       session ? t('workspace.currentPath') : t('workspace.defaultPath'),
@@ -670,26 +898,58 @@ async function selectSession(sessionId) {
   renderAll();
 }
 
-async function refreshActive() {
-  if (!state.activeSession) {
+async function refreshActive(options = {}) {
+  const activeSession = state.activeSession;
+  if (!activeSession) {
     await loadOverview(false);
     return;
   }
-  const sessionId = state.activeSession.id;
-  const previousUpdatedAt = state.activeSession.updatedAt;
-  const data = await api('/api/sessions/' + encodeURIComponent(sessionId));
-  state.activeSession = data.session;
-  state.approvals = data.approvals || [];
-  state.timeline = (await api('/api/sessions/' + encodeURIComponent(sessionId) + '/timeline')).events;
-  const overview = await api('/api/overview');
-  state.sessions = overview.sessions;
-  state.providers = overview.providers;
-  state.leases = overview.leases;
-  if (previousUpdatedAt !== data.session.updatedAt) {
-    state.packet = null;
-    state.diff = null;
+  const sessionId = activeSession.id;
+  if (state.refreshPromise && state.refreshSessionId === sessionId) {
+    if (!options.force) return state.refreshPromise;
+    await state.refreshPromise.catch(() => {});
+    if (!state.activeSession || state.activeSession.id !== sessionId) return;
   }
-  renderAll();
+  const previousUpdatedAt = activeSession.updatedAt;
+  const task = (async () => {
+    const [data, timeline, overview] = await Promise.all([
+      api('/api/sessions/' + encodeURIComponent(sessionId)),
+      api('/api/sessions/' + encodeURIComponent(sessionId) + '/timeline'),
+      api('/api/overview')
+    ]);
+    if (!state.activeSession || state.activeSession.id !== sessionId) return;
+    state.activeSession = data.session;
+    state.approvals = data.approvals || [];
+    state.timeline = timeline.events;
+    state.sessions = overview.sessions;
+    state.providers = overview.providers;
+    state.leases = overview.leases || [];
+    state.approvalGates = overview.approvalGates || [];
+    if (previousUpdatedAt !== data.session.updatedAt) {
+      state.packet = null;
+      state.diff = null;
+    }
+    renderAll();
+  })();
+  state.refreshPromise = task;
+  state.refreshSessionId = sessionId;
+  try {
+    return await task;
+  } finally {
+    if (state.refreshPromise === task) {
+      state.refreshPromise = null;
+      state.refreshSessionId = null;
+    }
+  }
+}
+
+async function refreshAfterSession(sessionId) {
+  if (state.activeSession && state.activeSession.id === sessionId) {
+    await refreshActive({ force: true });
+    return;
+  }
+  await loadOverview(false);
+  if (state.activeSession) await refreshActive();
 }
 
 function renderAll() {
@@ -715,7 +975,11 @@ function renderSessions() {
     return;
   }
   for (const session of state.sessions) {
-    const row = node('div', 'session-row' + (state.activeSession && state.activeSession.id === session.id ? ' active' : ''));
+    const activity = sessionActivity(session);
+    const activeClass = state.activeSession && state.activeSession.id === session.id ? ' active' : '';
+    const runningClass = activity.lease || activity.pending ? ' running' : '';
+    const blockedClass = activity.approvalGate || activity.conflict ? ' blocked' : '';
+    const row = node('div', 'session-row' + activeClass + runningClass + blockedClass);
     const button = node('button', 'session-item');
     button.type = 'button';
     button.title = session.title || '';
@@ -725,17 +989,35 @@ function renderSessions() {
       button.append(node('span', 'session-item-workspace', pathTail(session.workspace)));
     }
     const meta = node('span', 'session-item-meta');
-      meta.append(node('span', '', tCount('sessions.messages', session.counts.messages)));
-      meta.append(node('span', '', tCount('sessions.snapshots', session.counts.checkpoints)));
+    if (activity.approvalGate) {
+      meta.append(node('span', 'session-item-status blocked', t('sessions.status.waitingApproval')));
+    } else if (activity.conflict && activity.conflict.approvalId) {
+      meta.append(node('span', 'session-item-status blocked', approvalGateConflictLabel(session, activity.conflict)));
+    } else if (activity.lease || activity.pending) {
+      meta.append(node('span', 'session-item-status running', t('sessions.status.running')));
+    } else if (activity.conflict) {
+      meta.append(node('span', 'session-item-status blocked', t('sessions.status.workspaceBusy')));
+    }
+    meta.append(node('span', '', tCount('sessions.messages', session.counts.messages)));
+    meta.append(node('span', '', tCount('sessions.snapshots', session.counts.checkpoints)));
     meta.append(node('span', '', formatDate(session.updatedAt)));
     button.append(meta);
     button.addEventListener('click', () => selectSession(session.id).catch((error) => showToast(error.message, true)));
 
     const remove = node('button', 'session-delete-button');
     remove.type = 'button';
-      remove.title = t('sessions.deleteTitle');
-      remove.setAttribute('aria-label', t('sessions.deleteTitle'));
-      remove.textContent = t('sessions.delete');
+    remove.title = t('sessions.deleteTitle');
+    remove.setAttribute('aria-label', t('sessions.deleteTitle'));
+    remove.textContent = t('sessions.delete');
+    remove.disabled = Boolean(activity.lease || activity.pending || activity.approvalGate || activity.conflict);
+    if (remove.disabled) {
+      remove.title = activity.approvalGate
+        ? t('sessions.deleteBlockedApproval')
+        : activity.conflict && activity.conflict.approvalId
+          ? t('sessions.deleteBlockedRelatedApproval')
+          : t('sessions.deleteBlockedRunning');
+      remove.setAttribute('aria-label', remove.title);
+    }
     remove.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -749,6 +1031,11 @@ function renderSessions() {
 
 async function deleteSession(session) {
   if (!session || !session.id) return;
+  const blocker = sessionActionBlocker(session);
+  if (blocker) {
+    showToast(blocker, true);
+    return;
+  }
   const label = shortenLabel(session.title, 18);
   const confirmed = window.confirm(t('sessions.deleteConfirm', { label }));
   if (!confirmed) return;
@@ -804,9 +1091,9 @@ function renderProviders() {
 function renderHeader() {
   const session = state.activeSession;
   if (!session) {
-      elements.activeTitle.textContent = t('active.emptyTitle');
-      elements.activeMeta.textContent = t('active.emptyMeta');
-      elements.leaseBadge.textContent = t('lease.none');
+    elements.activeTitle.textContent = t('active.emptyTitle');
+    elements.activeMeta.textContent = t('active.emptyMeta');
+    elements.leaseBadge.textContent = t('lease.none');
     elements.leaseBadge.className = 'status-pill neutral';
       elements.approvalCount.textContent = t('approvals.count.zero');
     elements.sendButton.disabled = true;
@@ -819,13 +1106,41 @@ function renderHeader() {
   elements.activeMeta.textContent = goal + workspaceBit;
   elements.activeMeta.title = (session.workspace || '') + (goal ? ('\n' + goal) : '');
   syncWorkspaceLabel();
-  const lease = (state.leases || []).find((item) => item.sessionId === session.id);
-    elements.leaseBadge.textContent = lease ? t('lease.held', { provider: lease.providerId }) : t('lease.none');
-  elements.leaseBadge.className = 'status-pill ' + (lease ? 'warning' : 'neutral');
+  const activity = sessionActivity(session);
+  if (activity.approvalGate) {
+    elements.leaseBadge.textContent = t('lease.waitingApproval');
+    elements.leaseBadge.className = 'status-pill warning';
+  } else if (activity.conflict && activity.conflict.approvalId) {
+    elements.leaseBadge.textContent = approvalGateConflictLabel(session, activity.conflict);
+    elements.leaseBadge.className = 'status-pill warning';
+  } else if (activity.lease || activity.pending) {
+    elements.leaseBadge.textContent = t('lease.running', {
+      provider: activity.lease && activity.lease.providerId
+        ? activity.lease.providerId
+        : t('lease.currentTask')
+    });
+    elements.leaseBadge.className = 'status-pill warning';
+  } else if (activity.conflict) {
+    elements.leaseBadge.textContent = t('lease.workspaceHeld', {
+      provider: activity.conflict.providerId || t('lease.otherTask')
+    });
+    elements.leaseBadge.className = 'status-pill warning';
+  } else {
+    elements.leaseBadge.textContent = t('lease.none');
+    elements.leaseBadge.className = 'status-pill neutral';
+  }
   const count = state.approvals.length;
     elements.approvalCount.textContent = count ? tCount('approvals.count', count) : t('approvals.count.zero');
   elements.approvalCount.className = 'status-pill ' + (count ? 'warning' : 'neutral');
-  elements.sendButton.disabled = state.busy || !state.providers.length;
+  const actionBlocked = Boolean(activity.lease || activity.pending || activity.approvalGate || activity.conflict);
+  elements.sendButton.disabled = !state.providers.length || actionBlocked;
+  elements.sendButton.title = actionBlocked
+    ? sessionActionBlocker(session)
+    : t('send.action');
+  if (elements.workspaceButton) elements.workspaceButton.disabled = state.busy || actionBlocked;
+  elements.checkpointButton.disabled = state.busy || actionBlocked;
+  elements.packetButton.disabled = state.busy || actionBlocked;
+  elements.exportButton.disabled = state.busy || actionBlocked;
 }
 
 function eventClass(event) {
@@ -1064,6 +1379,20 @@ function renderCheckpointInspector() {
     row.append(node('span', 'kv-key', label), node('span', 'kv-value', contract[key] || '—'));
     contractRows.append(row);
   }
+  const completionFirstRow = node('div', 'kv-row');
+  completionFirstRow.append(
+    node('span', 'kv-key', t('contract.completeFirst')),
+    node('span', 'kv-value', contract.completeTaskFirst === false
+      ? t('contract.disabled')
+      : t('contract.enabled'))
+  );
+  contractRows.append(completionFirstRow);
+  const maxStepsRow = node('div', 'kv-row');
+  maxStepsRow.append(
+    node('span', 'kv-key', t('contract.maxSteps')),
+    node('span', 'kv-value', tCount('contract.toolSteps', contract.maxSteps || 32))
+  );
+  contractRows.append(maxStepsRow);
   contractSection.append(contractRows);
   const tags = node('div', 'tag-list');
   for (const item of (contract.constraints || []).slice(0, 10)) tags.append(node('span', 'tag', item));
@@ -1102,8 +1431,8 @@ function renderPacketInspector() {
 function renderApprovalInspector() {
   const heading = node('div', 'inspector-heading');
   const info = node('div');
-    info.append(node('h3', '', t('approvals.title')), node('p', '', t('approvals.body')));
-    const refresh = node('button', 'secondary-button', t('packet.refresh'));
+  info.append(node('h3', '', t('approvals.title')), node('p', '', t('approvals.body')));
+  const refresh = node('button', 'secondary-button', t('packet.refresh'));
   refresh.type = 'button';
   refresh.addEventListener('click', refreshActive);
   heading.append(info, refresh);
@@ -1114,14 +1443,25 @@ function renderApprovalInspector() {
   }
   for (const approval of state.approvals) {
     const item = node('div', 'approval-item');
-      item.append(node('h4', '', approval.actionType === 'write_file' ? t('approvals.fileWrite') : t('approvals.command')));
+    const title = approval.toolName === 'propose_get_current_time'
+      ? t('approvals.systemTime')
+      : approval.actionType === 'write_file'
+        ? t('approvals.fileWrite')
+        : approval.actionType === 'run_command'
+          ? t('approvals.command')
+          : t('approvals.tool');
+    item.append(node('h4', '', title));
     item.append(node('div', 'approval-preview', approval.summary + '\n' + approval.preview));
     const actions = node('div', 'approval-actions');
       const reject = node('button', 'secondary-button', t('approvals.reject'));
     reject.type = 'button';
+    reject.disabled = state.pendingApprovals.has(state.activeSession.id);
     reject.addEventListener('click', () => resolveApproval(approval.approvalId, 'reject'));
       const approve = node('button', 'primary-button', t('approvals.approve'));
     approve.type = 'button';
+    const blocker = approvalResolutionBlocker(state.activeSession, approval.approvalId);
+    approve.disabled = Boolean(blocker);
+    if (blocker) approve.title = blocker;
     approve.addEventListener('click', () => resolveApproval(approval.approvalId, 'approve'));
     actions.append(reject, approve);
     item.append(actions);
@@ -1155,6 +1495,8 @@ function renderDiffInspector() {
 
 async function createCheckpoint() {
   if (!state.activeSession) return;
+  const blocker = sessionActionBlocker(state.activeSession);
+  if (blocker) return showToast(blocker, true);
   setBusy(true);
   try {
     await api('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/checkpoints', { method: 'POST', body: {} });
@@ -1171,6 +1513,8 @@ async function createCheckpoint() {
 
 async function previewPacket() {
   if (!state.activeSession) return;
+  const blocker = sessionActionBlocker(state.activeSession);
+  if (blocker) return showToast(blocker, true);
   setBusy(true);
   try {
     const packet = await api('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/packet', { method: 'POST', body: {} });
@@ -1188,56 +1532,91 @@ async function previewPacket() {
 }
 
 async function sendTurn() {
-  if (!state.activeSession) return;
+  const session = state.activeSession;
+  if (!session) return;
+  const sessionId = session.id;
+  if (state.pendingTurns.has(sessionId)) return;
+  const blocker = sessionActionBlocker(session);
+  if (blocker) return showToast(blocker, true);
   const providerId = elements.providerSelect.value;
-    if (!providerId) return showToast(t('toast.configureProvider'), true);
-  setBusy(true);
+  if (!providerId) return showToast(t('toast.configureProvider'), true);
+  const instruction = elements.composerText.value.trim();
+  state.pendingTurns.add(sessionId);
+  renderAll();
   try {
-    const result = await api('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/turn', {
+    const result = await api('/api/sessions/' + encodeURIComponent(sessionId) + '/turn', {
       method: 'POST',
-      body: { providerId, instruction: elements.composerText.value.trim(), maxSteps: 6 }
+      body: { providerId, instruction }
     });
-    elements.composerText.value = '';
-    await refreshActive();
-    if (result.status === 'approval_required') {
+    const stillSelected = state.activeSession && state.activeSession.id === sessionId;
+    if (stillSelected && instruction && elements.composerText.value.trim() === instruction) {
+      elements.composerText.value = '';
+    }
+    await refreshAfterSession(sessionId);
+    if (stillSelected && result.status === 'approval_required') {
       state.tab = 'approvals';
       setActiveTab('approvals');
       renderInspector();
-        showToast(t('toast.approvalRequired'));
+      showToast(t('toast.approvalRequired'));
     } else if (result.status === 'step_limit') {
         showToast(t('toast.stepLimit'), true);
     } else {
         showToast(t('toast.turnComplete'));
     }
   } catch (error) {
-    await refreshActive().catch(() => {});
-    showToast(error.message, true);
+    await refreshAfterSession(sessionId).catch(() => {});
+    showToast(
+      error.code === 'WRITE_LEASE_BUSY'
+        ? t('errors.writeLeaseBusy')
+        : error.message,
+      true
+    );
   } finally {
-    setBusy(false);
+    state.pendingTurns.delete(sessionId);
+    renderAll();
   }
 }
 
 async function resolveApproval(approvalId, decision) {
-  setBusy(true);
+  const session = state.activeSession;
+  if (!session) return;
+  const sessionId = session.id;
+  if (state.pendingApprovals.has(sessionId)) return;
+  if (decision === 'approve') {
+    const blocker = approvalResolutionBlocker(session, approvalId);
+    if (blocker) return showToast(blocker, true);
+  }
+  state.pendingApprovals.add(sessionId);
+  renderAll();
   try {
     await api('/api/approvals/' + encodeURIComponent(approvalId) + '/resolve', {
       method: 'POST',
-      body: { decision, continueTurn: decision === 'approve', maxSteps: 6 }
+      body: { decision, continueTurn: decision === 'approve' }
     });
-    await refreshActive();
-    state.tab = 'approvals';
-    setActiveTab('approvals');
-      showToast(decision === 'approve' ? t('toast.approved') : t('toast.rejected'));
+    await refreshAfterSession(sessionId);
+    if (state.activeSession && state.activeSession.id === sessionId) {
+      state.tab = 'approvals';
+      setActiveTab('approvals');
+    }
+    showToast(decision === 'approve' ? t('toast.approved') : t('toast.rejected'));
   } catch (error) {
-    await refreshActive().catch(() => {});
-    showToast(error.message, true);
+    await refreshAfterSession(sessionId).catch(() => {});
+    showToast(
+      error.code === 'WRITE_LEASE_BUSY'
+        ? t('errors.writeLeaseBusy')
+        : error.message,
+      true
+    );
   } finally {
-    setBusy(false);
+    state.pendingApprovals.delete(sessionId);
+    renderAll();
   }
 }
 
 async function exportForCodex() {
   if (!state.activeSession) return;
+  const blocker = sessionActionBlocker(state.activeSession);
+  if (blocker) return showToast(blocker, true);
   try {
     const response = await fetch('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/export?format=markdown', {
       headers: { 'x-relaydock-token': state.token }
@@ -1257,10 +1636,7 @@ async function exportForCodex() {
 
 function setBusy(value) {
   state.busy = value;
-  elements.sendButton.disabled = value || !state.activeSession || !state.providers.length;
-  elements.checkpointButton.disabled = value;
-  elements.packetButton.disabled = value;
-  elements.exportButton.disabled = value;
+  renderHeader();
 }
 
 function setActiveTab(tab) {
@@ -1278,6 +1654,41 @@ function modalField(label, name, value = '', type = 'text', help = '') {
   wrap.append(input);
   if (help) wrap.append(node('small', '', help));
   return wrap;
+}
+
+function modalNumberField(label, name, value, min, max, help = '') {
+  const wrap = modalField(label, name, value, 'number', help);
+  const input = wrap.querySelector('input');
+  input.min = String(min);
+  input.max = String(max);
+  input.step = '1';
+  input.required = true;
+  return wrap;
+}
+
+function modalCheckbox(label, name, checked, help = '') {
+  const wrap = node('label', 'form-check');
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.name = name;
+  input.value = 'true';
+  input.checked = Boolean(checked);
+  const content = node('span', 'form-check-content');
+  content.append(node('strong', '', label));
+  if (help) content.append(node('small', '', help));
+  wrap.append(input, content);
+  return wrap;
+}
+
+function taskPolicyValues(values) {
+  const maxSteps = Number(values.maxSteps);
+  if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 100) {
+    throw new Error(t('errors.maxStepsRange'));
+  }
+  return {
+    completeTaskFirst: values.completeTaskFirst === 'true',
+    maxSteps
+  };
 }
 
 function openModal(title, fields, submitLabel, onSubmit) {
@@ -1317,19 +1728,39 @@ function closeModal() {
 
 function openSessionModal() {
   const fields = [];
-    fields.push(modalField(t('sessions.name'), 'title', t('sessions.newTitle')));
-    const goal = modalField(t('sessions.goal'), 'goal', '', 'textarea', t('sessions.goalHelp'));
+  fields.push(modalField(t('sessions.name'), 'title', t('sessions.newTitle')));
+  const goal = modalField(t('sessions.goal'), 'goal', '', 'textarea', t('sessions.goalHelp'));
   fields.push(goal);
-    fields.push(modalField(t('sessions.acceptance'), 'acceptanceCriteria', '', 'textarea'));
-    fields.push(modalField(t('sessions.constraints'), 'constraints', '', 'textarea'));
-    openModal(t('sessions.new'), fields, t('sessions.createAction'), async (values) => {
+  fields.push(modalField(t('sessions.acceptance'), 'acceptanceCriteria', '', 'textarea'));
+  fields.push(modalField(t('sessions.constraints'), 'constraints', '', 'textarea'));
+  const policy = node('div', 'task-policy-fields');
+  policy.append(
+    modalCheckbox(
+      t('contract.completeFirst'),
+      'completeTaskFirst',
+      true,
+      t('contract.completeFirstHelp')
+    ),
+    modalNumberField(
+      t('contract.maxSteps'),
+      'maxSteps',
+      32,
+      1,
+      100,
+      t('contract.maxStepsHelp')
+    )
+  );
+  fields.push(policy);
+  openModal(t('sessions.new'), fields, t('sessions.createAction'), async (values) => {
+    const taskPolicy = taskPolicyValues(values);
     const session = await api('/api/sessions', {
       method: 'POST',
       body: {
         title: values.title,
         goal: values.goal,
         acceptanceCriteria: values.acceptanceCriteria.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-        constraints: values.constraints.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+        constraints: values.constraints.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+        ...taskPolicy
       }
     });
     await loadOverview(false);
@@ -1488,15 +1919,34 @@ function openContractModal() {
   if (!state.activeSession) return;
   const contract = state.activeSession.contract || {};
   const fields = [];
-    fields.push(modalField(t('sessions.name'), 'title', contract.title || ''));
-    fields.push(modalField(t('sessions.goal'), 'goal', contract.goal || '', 'textarea'));
-    fields.push(modalField(t('contract.currentSummary'), 'summary', contract.summary || '', 'textarea'));
-    fields.push(modalField(t('sessions.acceptance'), 'acceptanceCriteria', (contract.acceptanceCriteria || []).join('\n'), 'textarea'));
-    fields.push(modalField(t('sessions.constraints'), 'constraints', (contract.constraints || []).join('\n'), 'textarea'));
-    fields.push(modalField(t('contract.decisions'), 'decisions', (contract.decisions || []).join('\n'), 'textarea'));
-    fields.push(modalField(t('contract.nextSteps'), 'nextSteps', (contract.nextSteps || []).join('\n'), 'textarea'));
-    openModal(t('contract.edit'), fields, t('contract.save'), async (values) => {
+  fields.push(modalField(t('sessions.name'), 'title', contract.title || ''));
+  fields.push(modalField(t('sessions.goal'), 'goal', contract.goal || '', 'textarea'));
+  fields.push(modalField(t('contract.currentSummary'), 'summary', contract.summary || '', 'textarea'));
+  fields.push(modalField(t('sessions.acceptance'), 'acceptanceCriteria', (contract.acceptanceCriteria || []).join('\n'), 'textarea'));
+  fields.push(modalField(t('sessions.constraints'), 'constraints', (contract.constraints || []).join('\n'), 'textarea'));
+  fields.push(modalField(t('contract.decisions'), 'decisions', (contract.decisions || []).join('\n'), 'textarea'));
+  fields.push(modalField(t('contract.nextSteps'), 'nextSteps', (contract.nextSteps || []).join('\n'), 'textarea'));
+  const policy = node('div', 'task-policy-fields');
+  policy.append(
+    modalCheckbox(
+      t('contract.completeFirst'),
+      'completeTaskFirst',
+      contract.completeTaskFirst !== false,
+      t('contract.completeFirstHelp')
+    ),
+    modalNumberField(
+      t('contract.maxSteps'),
+      'maxSteps',
+      contract.maxSteps || 32,
+      1,
+      100,
+      t('contract.maxStepsHelp')
+    )
+  );
+  fields.push(policy);
+  openModal(t('contract.edit'), fields, t('contract.save'), async (values) => {
     const lines = (value) => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    const taskPolicy = taskPolicyValues(values);
     await api('/api/sessions/' + encodeURIComponent(state.activeSession.id), {
       method: 'PATCH',
       body: {
@@ -1506,7 +1956,8 @@ function openContractModal() {
         acceptanceCriteria: lines(values.acceptanceCriteria),
         constraints: lines(values.constraints),
         decisions: lines(values.decisions),
-        nextSteps: lines(values.nextSteps)
+        nextSteps: lines(values.nextSteps),
+        ...taskPolicy
       }
     });
     await refreshActive();
@@ -1593,7 +2044,7 @@ document.querySelectorAll('.tab-button').forEach((button) => {
 });
 
 setInterval(() => {
-  if (!state.busy && state.activeSession) refreshActive().catch(() => {});
+  if (state.activeSession) refreshActive().catch(() => {});
 }, 12000);
 
   applyLanguage();

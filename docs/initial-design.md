@@ -418,7 +418,7 @@ RelayDock/
 | Provider | 仅 OpenAI Chat Completions 兼容 API，默认 DeepSeek |
 | Codex 接入 | Skill / CLI / 本地 API / MCP 显式记录，不自动读取 Codex 私有历史 |
 | 模型切换 | Studio 交接，或把 Codex/Cursor 指向本地 `/v1` Gateway |
-| Tool Proxy | 三个只读工具和两个审批型变更工具 |
+| Tool Proxy | 三个只读工具和三个审批型工具：文件写入、命令执行、系统时间读取 |
 | 写租约 | 单进程内存租约 |
 | API Key | 环境变量，或使用 AES-256-GCM 加密持久化 |
 | 回传方式 | Markdown / JSON 导出 |

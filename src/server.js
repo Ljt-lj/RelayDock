@@ -237,7 +237,7 @@ async function createRelayServer(options = {}) {
       }
 
       if (pathname === '/api/diff' && request.method === 'GET') {
-        return sendJson(response, 200, await service.getDiff());
+        return sendJson(response, 200, await service.getDiff(url.searchParams.get('sessionId') || null));
       }
 
       if (pathname === '/api/workspace' && request.method === 'GET') {

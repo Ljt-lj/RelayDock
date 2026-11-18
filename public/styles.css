@@ -256,6 +256,15 @@ h1, h2, h3, p { margin-top: 0; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.session-item-workspace {
+  display: block;
+  margin-top: 3px;
+  color: #6f857b;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .session-item-meta { margin-top: 6px; display: flex; gap: 8px; color: #7a877f; font-size: 10px; }
 .session-delete-button {
   align-self: center;

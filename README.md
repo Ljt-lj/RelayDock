@@ -13,6 +13,7 @@ RelayDock 是一个面向本地编码 Agent 的接力工作台：把 Codex 中�
 - Relay Packet Context Compiler；
 - OpenAI Chat Completions 兼容 Provider Adapter；
 - 默认 DeepSeek 配置；
+- Provider 配置持久化与 AES-256-GCM 加密 API Key 存储；
 - 读取工具直执行、写入与命令执行前审批；
 - 单写入者租约、工作区冲突检查和密钥脱敏；
 - 本地 HTTP API；
@@ -75,7 +76,7 @@ $env:RELAYDOCK_DATA_DIR = 'D:\RelayDock\state'
 node .\bin\relaydock.js serve --workspace D:\RelayDock
 ~~~
 
-.repo 根目录的 .env.example 只是变量清单；当前实现不会自动加载 .env 文件。请在启动进程中设置环境变量，或仅在 Studio 的 Provider 配置中填写“本次运行密钥”。
+仓库根目录的 .env.example 只是变量清单；当前实现不会自动加载 .env 文件。请在启动进程中设置环境变量，或在 Studio 的 Provider 配置中填写 API Key。Studio 保存的 Provider 配置会持久化，API Key 会加密后保存。
 
 ## 配置 DeepSeek
 
@@ -84,7 +85,19 @@ $env:DEEPSEEK_API_KEY = '<your-key>'
 node .\bin\relaydock.js serve --workspace D:\RelayDock
 ~~~
 
-也可以在 Studio 左下角点击 DeepSeek，填写 API Key。该密钥只保存在当前 RelayDock 进程内存中，不写入账本、Provider 配置或快照。
+也可以在 Studio 左下角点击 DeepSeek，填写 API Key。Provider 的端点、模型和上下文配置写入 `providers.json`；API Key 使用 AES-256-GCM 加密后写入 `credentials.json`，不会以明文写入账本、Provider 配置或快照。
+
+默认情况下，RelayDock 首次保存密钥时会生成 `.relaydock/credentials.key` 作为本地主密钥。也可以设置 `RELAYDOCK_MASTER_KEY`，值为 Base64 编码的 32 字节密钥：
+
+```powershell
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$bytes = New-Object byte[] 32
+$rng.GetBytes($bytes)
+[Convert]::ToBase64String($bytes)
+$rng.Dispose()
+```
+
+这是一个本地静态加密方案，不等同于 Windows DPAPI、硬件密钥库或云端 KMS。请同时保护 `credentials.key`（或 `RELAYDOCK_MASTER_KEY`）与 `credentials.json`；主密钥丢失后，已保存的密文无法恢复。
 
 连接测试会调用兼容端点的 /models。没有 API Key 时，不要发起真实模型请求。
 
@@ -159,7 +172,9 @@ Skill 不负责自动读取 Codex 内部隐藏历史，也不承诺复制模型�
 - Studio 通过 /api/bootstrap 获取短期进程 Token，受保护 API 需要 x-relaydock-token。
 - 账本使用追加写 JSONL；事件共享同一会话序列。
 - 大型 Checkpoint 存放在 blobs/，账本保存摘要、引用和哈希。
-- API Key 只来自环境变量或进程内存。
+- Provider 配置保存在 `providers.json`；API Key 使用 AES-256-GCM 加密保存在 `credentials.json`，环境变量仍可作为未持久化后备。
+- 默认本地主密钥保存在权限为 `0600` 的 `credentials.key`，也可通过 `RELAYDOCK_MASTER_KEY` 提供 Base64 编码的 32 字节主密钥。
+- 本地加密不等同于操作系统凭据管理器、硬件密钥库或云端 KMS；主密钥丢失后无法解密已有凭据。
 - 外部模型消息标记为 untrusted。
 - 默认排除 .env、密钥、私钥和常见敏感路径。
 - 写文件和运行命令都必须人工审批。
@@ -175,6 +190,7 @@ Skill 不负责自动读取 Codex 内部隐藏历史，也不承诺复制模型�
 - Tool Proxy 目前提供三个只读工具和两个审批型变更工具。
 - 已提供 stdio MCP 与 Chat Completions Gateway；尚未实现 Responses API、SSE/流式 UI、费用预算和自动额度检测。
 - RelayDock 自己运行有限的 Agent Loop；复杂工具能力仍取决于目标模型的 Tool Call 兼容性。
+- API Key 目前使用 RelayDock 管理的本地静态加密，尚未接入 Windows DPAPI、macOS Keychain、硬件密钥库或云端 KMS。
 
 后续方向包括 SQLite 索引、模型额度与回退策略、Responses API 完整兼容、流式事件、增量回传、冲突合并和多实例协调。
 

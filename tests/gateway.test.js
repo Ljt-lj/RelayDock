@@ -41,7 +41,7 @@ test('OpenAI-compatible gateway lists models and bridges chat completions into a
     dataDir: path.join(root, '.relaydock'),
     token: 'gateway-token'
   });
-  server.service.credentials.set('deepseek', 'test-key');
+  await server.service.credentials.set('deepseek', 'test-key');
   const originalClient = server.service.providerClient.bind(server.service);
   server.service.providerClient = async (id) => {
     const value = await originalClient(id);
@@ -124,7 +124,7 @@ test('OpenAI Responses API bridge returns output_text and supports retrieval', a
     dataDir: path.join(root, '.relaydock'),
     token: 'responses-token'
   });
-  server.service.credentials.set('deepseek', 'test-key');
+  await server.service.credentials.set('deepseek', 'test-key');
   const originalClient = server.service.providerClient.bind(server.service);
   server.service.providerClient = async (id) => {
     const value = await originalClient(id);
@@ -192,7 +192,7 @@ test('Responses SSE stream emits completed event', async (t) => {
     dataDir: path.join(root, '.relaydock'),
     token: 'sse-token'
   });
-  server.service.credentials.set('deepseek', 'test-key');
+  await server.service.credentials.set('deepseek', 'test-key');
   const originalClient = server.service.providerClient.bind(server.service);
   server.service.providerClient = async (id) => {
     const value = await originalClient(id);

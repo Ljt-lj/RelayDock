@@ -12,10 +12,11 @@ Studio remains available for audit, packet preview, and approval, but it is opti
 ## Start the daemon
 
 ~~~powershell
-$env:DEEPSEEK_API_KEY = '<your-key>'
 $env:RELAYDOCK_TOKEN = 'dev-relaydock-token'
 node .\bin\relaydock.js serve --workspace D:\YourRepo --port 4173
 ~~~
+
+Configure the upstream Provider key once in Studio, or set `DEEPSEEK_API_KEY` for an environment-only fallback. Studio credentials are encrypted at rest with AES-256-GCM.
 
 Printed on start:
 
@@ -136,13 +137,16 @@ Point the custom OpenAI-compatible endpoint at the same Gateway base URL and bea
 
 - Append-only session ledger
 - Checkpoints and packet compilation
-- Upstream provider credentials and forwarding
+- Persisted Provider configuration and encrypted upstream credentials
 - Approval records for RelayDock agent-loop mutations
 - Export artifacts for pasting back into Codex / Cursor
+
+Saved Provider metadata lives in `.relaydock/providers.json`. API keys live in `.relaydock/credentials.json` as AES-256-GCM ciphertext. RelayDock uses `.relaydock/credentials.key` by default, or a Base64-encoded 32-byte `RELAYDOCK_MASTER_KEY`. Losing the master key makes saved credentials unrecoverable. This local static encryption does not replace Windows DPAPI, a hardware keystore, or a cloud KMS.
 
 ## Safety notes
 
 - Gateway and Studio listen on `127.0.0.1` by default.
 - Treat Gateway bearer tokens like local API keys.
+- Protect both the encrypted credential file and its master key; neither is useful without the other.
 - External model output remains `untrusted` evidence in the ledger.
 - `+agent` mutations still require explicit approval.

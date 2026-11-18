@@ -124,6 +124,7 @@ function publicApproval(record) {
     sessionId: record.sessionId,
     providerId: record.providerId,
     toolCallId: record.toolCallId,
+    workspace: record.workspace || null,
     actionType: record.action.type,
     summary: record.action.summary,
     preview: record.action.preview,
@@ -222,6 +223,7 @@ class ToolProxy {
       sessionId: context.sessionId,
       providerId: context.providerId,
       toolCallId: toolCall.id,
+      workspace: path.resolve(context.workspace || this.workspace),
       action,
       createdAt: new Date().toISOString()
     };

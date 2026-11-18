@@ -106,15 +106,16 @@ test('service imports a local Cursor transcript into a RelayDock session', async
   const imported = await service.importCursorSession({
     cursorHome: root,
     path: sessionId,
-    maxMessages: 20,
-    switchWorkspace: true
+    maxMessages: 20
   });
   assert.ok(imported.session.id);
   assert.equal(imported.imported.length, 2);
   assert.ok(imported.checkpoint.checkpointId);
   assert.match(imported.session.title, /Cursor/);
   assert.equal(path.resolve(imported.workspace), path.resolve(projectWorkspace));
-  assert.equal(imported.workspaceChange.switched, true);
+  assert.equal(path.resolve(imported.session.workspace), path.resolve(projectWorkspace));
+  // Global default workspace stays at service root; only the session is bound.
+  assert.equal(path.resolve(service.workspace), path.resolve(root));
 
   await fs.rm(root, { recursive: true, force: true });
 });

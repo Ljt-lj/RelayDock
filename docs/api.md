@@ -48,7 +48,7 @@ Requests with an Origin header must be same-origin. The server rejects cross-ori
 | GET | /api/sessions/:id/export?format=markdown | Download Markdown export |
 | GET | /api/sessions/:id/export?format=json | JSON session export |
 | POST | /api/approvals/:id/resolve | Approve or reject a pending action |
-| GET | /api/diff | Git status and diff for the workspace |
+| GET | /api/diff?sessionId= | Git status/diff for a session workspace (omit sessionId for the default workspace) |
 | GET | /v1/models | OpenAI-compatible model list (Bearer token) |
 | POST | /v1/chat/completions | OpenAI-compatible bridge completion (Bearer token) |
 | POST | /v1/responses | OpenAI Responses API bridge for Codex (Bearer token) |
@@ -57,8 +57,8 @@ Requests with an Origin header must be same-origin. The server rejects cross-ori
 | POST | /api/codex/import | Import a Codex rollout into a RelayDock session |
 | GET | /api/cursor/sessions | List local Cursor agent transcripts under ~/.cursor/projects |
 | POST | /api/cursor/import | Import a Cursor agent transcript into a RelayDock session |
-| GET | /api/workspace | Current workspace, data directory, and recent workspaces |
-| PUT | /api/workspace | Switch the active file/Git workspace (`{ "path": "..." }`) |
+| GET | /api/workspace | Default workspace for new sessions, data directory, and recent workspaces |
+| PUT | /api/workspace | Set the default workspace for new sessions (`{ "path": "..." }`) |
 
 Gateway details and MCP setup: [bridge.md](bridge.md).
 
@@ -76,6 +76,7 @@ x-relaydock-token: <token>
 {
   "title": "完成登录模块",
   "goal": "实现并验证登录流程",
+  "workspace": "D:\\YourRepo",
   "constraints": ["保持现有 API 兼容"],
   "acceptanceCriteria": ["单元测试通过", "未登录请求返回 401"],
   "decisions": ["沿用现有 Token 格式"],
@@ -85,7 +86,26 @@ x-relaydock-token: <token>
 }
 ~~~
 
-The returned session includes id, title, contract, counts, lastMessage, and latestCheckpoint.
+`workspace` is optional; when omitted the server uses the default workspace from `PUT /api/workspace` / process startup. Tools, checkpoints, diffs, and approvals for that session use `session.workspace` only.
+
+The returned session includes id, title, workspace, contract, counts, lastMessage, and latestCheckpoint.
+
+## Update a Session
+
+~~~http
+PATCH /api/sessions/:id
+Content-Type: application/json
+x-relaydock-token: <token>
+~~~
+
+~~~json
+{
+  "workspace": "D:\\AnotherRepo",
+  "goal": "updated goal"
+}
+~~~
+
+`workspace` must be an existing directory. Changing it does not alter the global default workspace or other sessions.
 
 ## Record a Message
 
@@ -188,7 +208,9 @@ POST /api/approvals/:id/resolve
 }
 ~~~
 
-Approval runs outside the original HTTP turn. A write approval rechecks the previously observed file hash before writing. A command approval runs without a shell, inside the workspace, with a restricted environment, timeout, and output limit.
+Approval runs outside the original HTTP turn. Mutation proposals record the session workspace at proposal time; resolve uses that root even if the UI later selects another session. A write approval rechecks the previously observed file hash before writing. A command approval runs without a shell, inside that workspace, with a restricted environment, timeout, and output limit.
+
+Codex/Cursor import binds the inferred path onto `session.workspace` only; it does not switch the process default workspace unless no path can be inferred (then the new session uses the default).
 
 Use decision reject to discard the pending action without executing it.
 

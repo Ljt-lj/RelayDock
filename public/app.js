@@ -5,6 +5,8 @@ const TIMELINE_MODE_KEY = 'relaydock.timelineMode';
 const state = {
   token: null,
   workspace: null,
+  defaultWorkspace: null,
+  recentWorkspaces: [],
   sessions: [],
   providers: [],
   activeSession: null,
@@ -17,6 +19,24 @@ const state = {
   busy: false,
   timelineMode: localStorage.getItem(TIMELINE_MODE_KEY) === 'chat' ? 'chat' : 'full'
 };
+
+function activeWorkspacePath() {
+  if (state.activeSession && state.activeSession.workspace) return state.activeSession.workspace;
+  return state.defaultWorkspace || state.workspace || '';
+}
+
+function syncWorkspaceLabel() {
+  const pathValue = activeWorkspacePath();
+  if (elements.workspaceLabel) {
+    elements.workspaceLabel.textContent = shortPath(pathValue);
+    elements.workspaceLabel.title = pathValue || '';
+  }
+  if (elements.workspaceButton) {
+    elements.workspaceButton.title = state.activeSession
+      ? ('配置本会话工作区：' + (pathValue || ''))
+      : ('配置新建会话默认工作区：' + (pathValue || ''));
+  }
+}
 
 const elements = {};
 for (const id of [
@@ -77,7 +97,8 @@ async function bootstrap() {
     const data = await fetch('/api/bootstrap').then((response) => response.json());
     state.token = data.token;
     state.workspace = data.workspace;
-    elements.workspaceLabel.textContent = shortPath(state.workspace);
+    state.defaultWorkspace = data.workspace;
+    syncWorkspaceLabel();
     elements.healthBadge.classList.add('ok');
     elements.healthBadge.lastElementChild.textContent = '本地已连接';
     await loadOverview(true);
@@ -95,12 +116,8 @@ async function loadOverview(selectFirst = false) {
   state.approvals = data.approvals;
   state.leases = data.leases;
   state.workspace = data.workspace || state.workspace;
+  state.defaultWorkspace = data.defaultWorkspace || data.workspace || state.defaultWorkspace;
   state.recentWorkspaces = data.recentWorkspaces || [];
-  if (elements.workspaceLabel) {
-    elements.workspaceLabel.textContent = shortPath(state.workspace);
-    elements.workspaceLabel.title = state.workspace || '';
-  }
-  if (elements.workspaceButton) elements.workspaceButton.title = '配置工作区：' + (state.workspace || '');
   renderSessions();
   renderProviders();
   if (!state.activeSession && (selectFirst || state.sessions.length)) {
@@ -109,19 +126,23 @@ async function loadOverview(selectFirst = false) {
     const current = state.sessions.find((item) => item.id === state.activeSession.id);
     if (current) state.activeSession = current;
   }
+  syncWorkspaceLabel();
   renderHeader();
   renderTimeline();
   renderInspector();
 }
 
 function openWorkspaceModal() {
+  const session = state.activeSession;
   const fields = [];
   fields.push(modalField(
-    '工作区路径',
+    session ? '本会话工作区路径' : '新建会话默认工作区',
     'path',
-    state.workspace || '',
+    activeWorkspacePath(),
     'text',
-    '文件读写、Git Diff、Checkpoint 都限定在此目录内。会话账本仍保存在服务启动时的数据目录。'
+    session
+      ? '仅影响当前接力任务的文件读写、Git Diff 与 Checkpoint。切换任务会自动使用各自绑定的工作区。'
+      : '没有选中会话时，这里设置的是新建空白会话的默认工作区。'
   ));
   if (state.recentWorkspaces && state.recentWorkspaces.length) {
     const recent = node('div', 'recent-workspaces');
@@ -137,18 +158,57 @@ function openWorkspaceModal() {
     }
     fields.push(recent);
   }
-  openModal('配置工作区', fields, '切换工作区', async (values) => {
+  if (session) {
+    const hint = node('p', '', '也可同时把该路径设为新建会话默认工作区。');
+    hint.style.margin = '0';
+    hint.style.color = 'var(--muted)';
+    hint.style.fontSize = '12px';
+    fields.push(hint);
+    const alsoDefault = node('label', '');
+    alsoDefault.style.display = 'flex';
+    alsoDefault.style.alignItems = 'center';
+    alsoDefault.style.gap = '8px';
+    alsoDefault.style.fontSize = '12px';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.name = 'alsoDefault';
+    alsoDefault.append(checkbox, document.createTextNode('同时设为新建默认'));
+    fields.push(alsoDefault);
+  }
+  openModal(session ? '配置本会话工作区' : '配置默认工作区', fields, '保存', async (values) => {
+    const alsoDefault = Boolean(elements.modalForm.querySelector('[name="alsoDefault"]') && elements.modalForm.querySelector('[name="alsoDefault"]').checked);
+    if (session) {
+      const updated = await api('/api/sessions/' + encodeURIComponent(session.id), {
+        method: 'PATCH',
+        body: { workspace: values.path }
+      });
+      state.activeSession = updated;
+      state.diff = null;
+      if (alsoDefault) {
+        const defaults = await api('/api/workspace', {
+          method: 'PUT',
+          body: { path: values.path }
+        });
+        state.defaultWorkspace = defaults.workspace;
+        state.workspace = defaults.workspace;
+        state.recentWorkspaces = defaults.recentWorkspaces || state.recentWorkspaces;
+      }
+      await loadOverview(false);
+      await selectSession(session.id);
+      showToast('会话工作区已设为 ' + shortPath(updated.workspace));
+      return;
+    }
     const result = await api('/api/workspace', {
       method: 'PUT',
       body: { path: values.path }
     });
     state.workspace = result.workspace;
+    state.defaultWorkspace = result.workspace;
     state.recentWorkspaces = result.recentWorkspaces || [];
     state.diff = null;
-    elements.workspaceLabel.textContent = shortPath(state.workspace);
-    elements.workspaceLabel.title = state.workspace;
+    syncWorkspaceLabel();
     await loadOverview(false);
-    showToast('工作区已切换到 ' + shortPath(result.workspace));
+    showToast('默认工作区已设为 ' + shortPath(result.workspace));
   });
 }
 
@@ -160,6 +220,7 @@ async function selectSession(sessionId) {
   state.timeline = (await api('/api/sessions/' + encodeURIComponent(sessionId) + '/timeline')).events;
   state.packet = null;
   state.diff = null;
+  syncWorkspaceLabel();
   renderAll();
 }
 
@@ -214,6 +275,9 @@ function renderSessions() {
     button.title = session.title || '';
     button.append(node('span', 'session-item-title', shortenLabel(session.title, 18)));
     button.append(node('span', 'session-item-excerpt', session.lastMessage ? session.lastMessage.excerpt : '尚未记录消息'));
+    if (session.workspace) {
+      button.append(node('span', 'session-item-workspace', pathTail(session.workspace)));
+    }
     const meta = node('span', 'session-item-meta');
     meta.append(node('span', '', session.counts.messages + ' 消息'));
     meta.append(node('span', '', session.counts.checkpoints + ' 快照'));
@@ -301,7 +365,10 @@ function renderHeader() {
   elements.activeTitle.textContent = shortenLabel(session.title, 28);
   elements.activeTitle.title = session.title || '';
   const goal = session.contract && session.contract.goal ? session.contract.goal : '尚未填写任务目标';
-  elements.activeMeta.textContent = goal;
+  const workspaceBit = session.workspace ? (' · ' + pathTail(session.workspace)) : '';
+  elements.activeMeta.textContent = goal + workspaceBit;
+  elements.activeMeta.title = (session.workspace || '') + (goal ? ('\n' + goal) : '');
+  syncWorkspaceLabel();
   const lease = (state.leases || []).find((item) => item.sessionId === session.id);
   elements.leaseBadge.textContent = lease ? lease.providerId + ' 持有写锁' : '无写锁';
   elements.leaseBadge.className = 'status-pill ' + (lease ? 'warning' : 'neutral');
@@ -473,7 +540,8 @@ function inspectorTabButton(label, tab) {
 }
 
 async function loadDiff() {
-  state.diff = await api('/api/diff');
+  const sessionId = state.activeSession && state.activeSession.id;
+  state.diff = await api('/api/diff' + (sessionId ? ('?sessionId=' + encodeURIComponent(sessionId)) : ''));
   renderInspector();
 }
 
@@ -609,7 +677,12 @@ function renderApprovalInspector() {
 function renderDiffInspector() {
   const heading = node('div', 'inspector-heading');
   const info = node('div');
-  info.append(node('h3', '', '工作区 Diff'), node('p', '', '写入前用于检查未提交改动和潜在冲突。'));
+  info.append(
+    node('h3', '', '工作区 Diff'),
+    node('p', '', state.activeSession
+      ? ('当前会话工作区：' + (state.activeSession.workspace || '(未设置)'))
+      : '写入前用于检查未提交改动和潜在冲突。')
+  );
   const refresh = node('button', 'secondary-button', '刷新');
   refresh.type = 'button';
   refresh.addEventListener('click', () => loadDiff().catch((error) => showToast(error.message, true)));
@@ -618,6 +691,9 @@ function renderDiffInspector() {
   if (!state.diff) {
     elements.inspectorBody.append(node('div', 'empty-inspector', '正在读取 Git 状态…'));
     return;
+  }
+  if (state.diff.workspace) {
+    elements.inspectorBody.append(node('p', '', 'Diff 根目录：' + state.diff.workspace));
   }
   elements.inspectorBody.append(node('pre', 'diff-panel', state.diff.diff || state.diff.status || '没有未提交改动。'));
 }
@@ -852,10 +928,9 @@ async function openCodexImportModal() {
             closeModal();
             await loadOverview(false);
             await selectSession(result.session.id);
-            const switched = result.workspaceChange && result.workspaceChange.switched;
             showToast(
               '已导入 ' + result.imported.length + ' 条 Codex 消息'
-              + (switched ? '，工作区已切换到 ' + pathTail(result.workspace) : '')
+              + (result.workspace ? '，会话工作区 ' + pathTail(result.workspace) : '')
             );
           } catch (error) {
             elements.modalError.textContent = error.message;
@@ -923,10 +998,9 @@ async function openCursorImportModal() {
             closeModal();
             await loadOverview(false);
             await selectSession(result.session.id);
-            const switched = result.workspaceChange && result.workspaceChange.switched;
             showToast(
               '已导入 ' + result.imported.length + ' 条 Cursor 消息'
-              + (switched ? '，工作区已切换到 ' + pathTail(result.workspace) : (result.source && result.source.workspace ? '（工作区 ' + pathTail(result.source.workspace) + '）' : ''))
+              + (result.workspace ? '，会话工作区 ' + pathTail(result.workspace) : '')
             );
           } catch (error) {
             elements.modalError.textContent = error.message;

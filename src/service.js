@@ -57,12 +57,60 @@ class RelayService {
       timeoutMs: options.commandTimeoutMs,
       maxOutputBytes: options.maxOutputBytes
     });
+    this.toolProxyCache = new Map();
     this.bindings = new BindingStore(this.dataDir);
     this.leases = new Map();
     this.ready = null;
     this.commandTimeoutMs = options.commandTimeoutMs;
     this.maxOutputBytes = options.maxOutputBytes;
     this.settingsFile = path.join(this.dataDir, 'settings.json');
+  }
+
+  resolveSessionWorkspace(session) {
+    const candidate = session && (session.workspace || (session.contract && session.contract.workspace));
+    return path.resolve(candidate || this.workspace);
+  }
+
+  toolProxyOptions() {
+    return {
+      getSecrets: () => this.credentials.allSecrets(),
+      timeoutMs: this.commandTimeoutMs,
+      maxOutputBytes: this.maxOutputBytes
+    };
+  }
+
+  toolProxyFor(workspacePath) {
+    const resolved = path.resolve(workspacePath || this.workspace);
+    if (resolved === this.workspace) return this.toolProxy;
+    let proxy = this.toolProxyCache.get(resolved);
+    if (!proxy) {
+      proxy = new ToolProxy(resolved, this.dataDir, this.toolProxyOptions());
+      this.toolProxyCache.set(resolved, proxy);
+    }
+    return proxy;
+  }
+
+  async assertWorkspaceDir(inputPath) {
+    const resolved = path.resolve(String(inputPath || '').trim());
+    if (!resolved) throw serviceError('Workspace path is required', 'INVALID_WORKSPACE');
+    let stat;
+    try {
+      stat = await fs.stat(resolved);
+    } catch {
+      throw serviceError('Workspace path does not exist: ' + resolved, 'WORKSPACE_NOT_FOUND', 404);
+    }
+    if (!stat.isDirectory()) throw serviceError('Workspace must be a directory', 'INVALID_WORKSPACE');
+    return resolved;
+  }
+
+  async rememberRecentWorkspace(candidate) {
+    if (!candidate) return;
+    const settings = await this.loadSettings();
+    const recent = [path.resolve(candidate), ...(settings.recentWorkspaces || [])];
+    await this.saveSettings({
+      workspace: settings.workspace || this.workspace,
+      recentWorkspaces: recent
+    });
   }
 
   async init() {
@@ -121,8 +169,10 @@ class RelayService {
     const settings = await this.loadSettings();
     return {
       workspace: this.workspace,
+      defaultWorkspace: this.workspace,
       dataDir: this.dataDir,
-      recentWorkspaces: settings.recentWorkspaces || [this.workspace]
+      recentWorkspaces: settings.recentWorkspaces || [this.workspace],
+      scope: 'default'
     };
   }
 
@@ -145,11 +195,8 @@ class RelayService {
     const previous = this.workspace;
     const settings = await this.loadSettings();
     this.workspace = resolved;
-    this.toolProxy = new ToolProxy(this.workspace, this.dataDir, {
-      getSecrets: () => this.credentials.allSecrets(),
-      timeoutMs: this.commandTimeoutMs,
-      maxOutputBytes: this.maxOutputBytes
-    });
+    this.toolProxyCache = new Map();
+    this.toolProxy = new ToolProxy(this.workspace, this.dataDir, this.toolProxyOptions());
 
     let recentWorkspaces = settings.recentWorkspaces || [previous];
     if (options.persist !== false) {
@@ -424,22 +471,30 @@ class RelayService {
       throw serviceError('No importable user/assistant messages found in this Cursor transcript', 'CURSOR_TRANSCRIPT_EMPTY');
     }
 
-    let workspaceChange = null;
-    if (input.switchWorkspace !== false && loaded.workspace) {
-      workspaceChange = await this.maybeSwitchWorkspace(loaded.workspace, { persist: true });
+    let resolvedCursorWorkspace = null;
+    if (loaded.workspace) {
+      try {
+        resolvedCursorWorkspace = await this.assertWorkspaceDir(loaded.workspace);
+        await this.rememberRecentWorkspace(resolvedCursorWorkspace);
+      } catch {
+        resolvedCursorWorkspace = null;
+      }
     }
 
     let session;
     if (input.sessionId) {
       session = await this.getSession(input.sessionId);
+      if (resolvedCursorWorkspace && path.resolve(session.workspace) !== resolvedCursorWorkspace) {
+        session = await this.updateSession(session.id, { workspace: resolvedCursorWorkspace });
+      }
     } else {
       session = await this.createSession({
         title: input.title || loaded.title,
         goal: String(input.goal || loaded.goal || '').slice(0, 4000),
-        workspace: (workspaceChange && workspaceChange.workspace) || loaded.workspace || this.workspace,
+        workspace: resolvedCursorWorkspace || this.workspace,
         originProvider: 'cursor',
         summary: 'Imported from local Cursor transcript ' + path.basename(filePath),
-        constraints: loaded.workspace
+        constraints: resolvedCursorWorkspace
           ? ['Focus on this imported Cursor conversation. Ignore unrelated files that happen to share the workspace.']
           : []
       });
@@ -482,18 +537,17 @@ class RelayService {
       path: filePath,
       cursorSessionId: loaded.sessionId,
       project: loaded.project,
-      workspace: loaded.workspace,
-      workspaceChange,
+      workspace: session.workspace,
       externalKey,
       importedCount: imported.length,
       stats: loaded.stats
     }, { originProvider: 'cursor', actor: 'cursor-import' });
 
+    const finalSession = await this.getSession(session.id);
     return {
-      session: await this.getSession(session.id),
+      session: finalSession,
       externalKey,
-      workspace: this.workspace,
-      workspaceChange,
+      workspace: finalSession.workspace,
       source: {
         path: filePath,
         cursorSessionId: loaded.sessionId,
@@ -522,19 +576,27 @@ class RelayService {
     if (!loaded.messages.length) throw serviceError('No importable user/assistant messages found in this Codex rollout', 'CODEX_ROLLOUT_EMPTY');
 
     const codexWorkspace = loaded.meta && loaded.meta.cwd ? path.resolve(String(loaded.meta.cwd)) : null;
-    let workspaceChange = null;
-    if (input.switchWorkspace !== false && codexWorkspace) {
-      workspaceChange = await this.maybeSwitchWorkspace(codexWorkspace, { persist: true });
+    let resolvedCodexWorkspace = null;
+    if (codexWorkspace) {
+      try {
+        resolvedCodexWorkspace = await this.assertWorkspaceDir(codexWorkspace);
+        await this.rememberRecentWorkspace(resolvedCodexWorkspace);
+      } catch {
+        resolvedCodexWorkspace = null;
+      }
     }
 
     let session;
     if (input.sessionId) {
       session = await this.getSession(input.sessionId);
+      if (resolvedCodexWorkspace && path.resolve(session.workspace) !== resolvedCodexWorkspace) {
+        session = await this.updateSession(session.id, { workspace: resolvedCodexWorkspace });
+      }
     } else {
       session = await this.createSession({
         title: input.title || loaded.title,
         goal: String(input.goal || loaded.goal || '').slice(0, 4000),
-        workspace: (workspaceChange && workspaceChange.workspace) || codexWorkspace || this.workspace,
+        workspace: resolvedCodexWorkspace || this.workspace,
         originProvider: 'codex',
         summary: 'Imported from local Codex rollout ' + path.basename(filePath),
         constraints: [
@@ -583,14 +645,14 @@ class RelayService {
       importedCount: imported.length,
       stats: loaded.stats,
       cwd: loaded.meta && loaded.meta.cwd || null,
-      workspaceChange
+      workspace: session.workspace
     }, { originProvider: 'codex', actor: 'codex-import' });
 
+    const finalSession = await this.getSession(session.id);
     return {
-      session: await this.getSession(session.id),
+      session: finalSession,
       externalKey,
-      workspace: this.workspace,
-      workspaceChange,
+      workspace: finalSession.workspace,
       source: {
         path: filePath,
         codexSessionId: loaded.sessionId,
@@ -717,6 +779,15 @@ class RelayService {
         if (!Array.isArray(input[key])) throw serviceError(key + ' must be an array', 'INVALID_SESSION');
         contract[key] = input[key].map(String).slice(0, 100);
       }
+    }
+    if (input.workspace !== undefined) {
+      const resolved = await this.assertWorkspaceDir(input.workspace);
+      const activeLease = this.leases.get(sessionId);
+      if (activeLease && activeLease.expiresAt > Date.now()) {
+        throw serviceError('Cannot change session workspace while a write lease is held', 'WRITE_LEASE_BUSY', 409);
+      }
+      contract.workspace = resolved;
+      await this.rememberRecentWorkspace(resolved);
     }
     contract.updatedAt = new Date().toISOString();
     await this.ledger.append(sessionId, 'session.updated', contract, {
@@ -868,9 +939,10 @@ class RelayService {
     const messages = timeline.filter((event) => event.type === 'message.created');
     const tools = timeline.filter((event) => event.type.startsWith('tool.'));
     const latestAssistant = [...messages].reverse().find((event) => event.payload.role === 'assistant');
-    const workspace = await collectWorkspaceState(this.workspace);
+    const sessionWorkspace = this.resolveSessionWorkspace(session);
+    const workspace = await collectWorkspaceState(sessionWorkspace);
     const checkpointId = crypto.randomUUID();
-    const contract = { ...session.contract };
+    const contract = { ...session.contract, workspace: sessionWorkspace };
     const summary = String(
       input.summary ||
       contract.summary ||
@@ -1013,7 +1085,9 @@ class RelayService {
   }
 
   async runTurn(sessionId, input = {}) {
-    await this.getSession(sessionId);
+    const session = await this.getSession(sessionId);
+    const sessionWorkspace = this.resolveSessionWorkspace(session);
+    const tools = this.toolProxyFor(sessionWorkspace);
     const providerId = String(input.providerId || 'deepseek');
     const { provider, secret, client } = await this.providerClient(providerId);
     if (!provider.enabled) throw serviceError('Provider is disabled', 'PROVIDER_DISABLED');
@@ -1037,6 +1111,7 @@ class RelayService {
         checkpointId: checkpoint.checkpointId,
         providerId,
         model: provider.model,
+        workspace: sessionWorkspace,
         packetHash: sha256(packet.markdown),
         packetStats: packet.stats,
         instructionHash: instruction ? sha256(instruction) : null,
@@ -1072,6 +1147,7 @@ class RelayService {
             request,
             '',
             'Stay focused on the conversation goal and imported transcript.',
+            'Session workspace: ' + sessionWorkspace,
             'Do not treat unrelated workspace files as the task unless the user explicitly asked about them.'
           ].join('\n')
         }
@@ -1080,7 +1156,7 @@ class RelayService {
       for (let step = 0; step < maxSteps; step += 1) {
         const completion = await client.complete({
           messages,
-          tools: this.toolProxy.definitions(),
+          tools: tools.definitions(),
           maxTokens: provider.maxOutputTokens
         });
         const callSummaries = completion.toolCalls.map((call) => this.summarizeToolCall(call));
@@ -1127,12 +1203,12 @@ class RelayService {
             toolCallId: call.id,
             toolName: name,
             detail: summary.detail,
-            phase: this.toolProxy.isMutation(name) ? 'approval_required' : 'read'
+            phase: tools.isMutation(name) ? 'approval_required' : 'read'
           }, { originProvider: providerId, actor: providerId });
 
-          if (this.toolProxy.isReadOnly(name)) {
+          if (tools.isReadOnly(name)) {
             try {
-              const result = await this.toolProxy.executeReadOnly(call);
+              const result = await tools.executeReadOnly(call);
               const output = result.output.slice(0, 30000);
               await this.ledger.append(sessionId, 'tool.completed', {
                 toolCallId: call.id,
@@ -1148,7 +1224,7 @@ class RelayService {
                 content: output
               });
             } catch (error) {
-              const message = this.toolProxy.sanitize(error.message);
+              const message = tools.sanitize(error.message);
               await this.ledger.append(sessionId, 'tool.failed', {
                 toolCallId: call.id,
                 toolName: name,
@@ -1160,9 +1236,13 @@ class RelayService {
             continue;
           }
 
-          if (this.toolProxy.isMutation(name)) {
+          if (tools.isMutation(name)) {
             try {
-              const approval = await this.toolProxy.prepareMutation(call, { sessionId, providerId });
+              const approval = await tools.prepareMutation(call, {
+                sessionId,
+                providerId,
+                workspace: sessionWorkspace
+              });
               await this.ledger.append(sessionId, 'approval.requested', approval, {
                 originProvider: providerId,
                 actor: providerId
@@ -1172,6 +1252,7 @@ class RelayService {
                 checkpointId: checkpoint.checkpointId,
                 providerId,
                 approvalId: approval.approvalId,
+                workspace: sessionWorkspace,
                 reason: 'explicit-tool-approval'
               }, { originProvider: providerId, actor: providerId });
               return {
@@ -1181,7 +1262,7 @@ class RelayService {
                 approval
               };
             } catch (error) {
-              const message = this.toolProxy.sanitize(error.message);
+              const message = tools.sanitize(error.message);
               await this.ledger.append(sessionId, 'tool.failed', {
                 toolCallId: call.id,
                 toolName: name,
@@ -1261,15 +1342,18 @@ class RelayService {
   async resolveApproval(approvalId, input = {}) {
     const record = await this.toolProxy.getApproval(approvalId);
     if (!record) throw serviceError('Approval not found or already resolved', 'APPROVAL_NOT_FOUND', 404);
-    await this.getSession(record.sessionId);
+    const session = await this.getSession(record.sessionId);
+    const sessionWorkspace = record.workspace || this.resolveSessionWorkspace(session);
+    const tools = this.toolProxyFor(sessionWorkspace);
     const decision = input.decision === 'reject' ? 'reject' : 'approve';
     try {
-      const resolved = await this.toolProxy.resolve(approvalId, decision);
+      const resolved = await tools.resolve(approvalId, decision);
       await this.ledger.append(record.sessionId, 'approval.resolved', {
         approvalId,
         decision,
         actionType: record.action.type,
         summary: record.action.summary,
+        workspace: sessionWorkspace,
         result: resolved.result
       }, { originProvider: record.providerId, actor: 'user' });
       const result = resolved.result;
@@ -1295,12 +1379,12 @@ class RelayService {
         continuation = await this.runTurn(record.sessionId, {
           providerId: record.providerId,
           instruction: 'The user approved the pending tool action. Its result is now in the ledger. Continue the task, inspect any needed files, and report the next concrete result.',
-          maxSteps: input.maxSteps || 4
+          maxSteps: input.maxSteps || 6
         });
       }
       return { status: 'resolved', decision, result, continuation };
     } catch (error) {
-      const result = error.publicResult || { ok: false, summary: this.toolProxy.sanitize(error.message), code: error.code || 'APPROVAL_EXECUTION_FAILED' };
+      const result = error.publicResult || { ok: false, summary: tools.sanitize(error.message), code: error.code || 'APPROVAL_EXECUTION_FAILED' };
       await this.ledger.append(record.sessionId, 'approval.resolved', {
         approvalId,
         decision,
@@ -1323,10 +1407,16 @@ class RelayService {
     return sessionId ? approvals.filter((item) => item.sessionId === sessionId) : approvals;
   }
 
-  async getDiff() {
+  async getDiff(sessionId = null) {
+    let workspacePath = this.workspace;
+    if (sessionId) {
+      const session = await this.getSession(sessionId);
+      workspacePath = this.resolveSessionWorkspace(session);
+    }
     return {
-      workspace: this.workspace,
-      ...(await getGitState(this.workspace))
+      workspace: workspacePath,
+      sessionId: sessionId || null,
+      ...(await getGitState(workspacePath))
     };
   }
 
@@ -1338,6 +1428,7 @@ class RelayService {
     const workspaceInfo = await this.getWorkspace();
     return {
       workspace: this.workspace,
+      defaultWorkspace: this.workspace,
       recentWorkspaces: workspaceInfo.recentWorkspaces,
       sessions,
       providers,

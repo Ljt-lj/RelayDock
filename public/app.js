@@ -2,6 +2,7 @@
 
 const TIMELINE_MODE_KEY = 'relaydock.timelineMode';
 const LANGUAGE_KEY = 'relaydock.language';
+const { captureTimelineScroll, restoreTimelineScroll } = window.RelayDockTimelineScroll;
 
 const translations = {
   zh: {
@@ -895,7 +896,7 @@ async function selectSession(sessionId) {
   state.packet = null;
   state.diff = null;
   syncWorkspaceLabel();
-  renderAll();
+  renderAll({ forceTimelineBottom: true });
 }
 
 async function refreshActive(options = {}) {
@@ -952,11 +953,11 @@ async function refreshAfterSession(sessionId) {
   if (state.activeSession) await refreshActive();
 }
 
-function renderAll() {
+function renderAll(options = {}) {
   renderSessions();
   renderProviders();
   renderHeader();
-  renderTimeline();
+  renderTimeline(options);
   renderInspector();
 }
 
@@ -1186,7 +1187,7 @@ function setTimelineMode(mode) {
   state.timelineMode = mode === 'chat' ? 'chat' : 'full';
   localStorage.setItem(TIMELINE_MODE_KEY, state.timelineMode);
   syncTimelineModeSwitch();
-  renderTimeline();
+  renderTimeline({ forceTimelineBottom: true });
 }
 
 function visibleTimelineEvents() {
@@ -1198,7 +1199,8 @@ function visibleTimelineEvents() {
   });
 }
 
-function renderTimeline() {
+function renderTimeline(options = {}) {
+  const scrollSnapshot = captureTimelineScroll(elements.timeline);
   syncTimelineModeSwitch();
   if (!state.activeSession) {
     elements.timeline.replaceChildren();
@@ -1289,7 +1291,9 @@ function renderTimeline() {
 
     elements.timeline.append(entry);
   }
-  elements.timeline.scrollTop = elements.timeline.scrollHeight;
+  restoreTimelineScroll(elements.timeline, scrollSnapshot, {
+    forceBottom: options.forceTimelineBottom === true
+  });
 }
 
 function inspectorTabButton(label, tab) {
@@ -1542,7 +1546,7 @@ async function sendTurn() {
   if (!providerId) return showToast(t('toast.configureProvider'), true);
   const instruction = elements.composerText.value.trim();
   state.pendingTurns.add(sessionId);
-  renderAll();
+  renderAll({ forceTimelineBottom: true });
   try {
     const result = await api('/api/sessions/' + encodeURIComponent(sessionId) + '/turn', {
       method: 'POST',
@@ -1587,7 +1591,7 @@ async function resolveApproval(approvalId, decision) {
     if (blocker) return showToast(blocker, true);
   }
   state.pendingApprovals.add(sessionId);
-  renderAll();
+  renderAll({ forceTimelineBottom: true });
   try {
     await api('/api/approvals/' + encodeURIComponent(approvalId) + '/resolve', {
       method: 'POST',

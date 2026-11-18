@@ -536,6 +536,17 @@ function node(tag, className, text) {
   return item;
 }
 
+function messageContent(content) {
+  const body = node('div', 'event-content');
+  const html = typeof renderMessageMarkdown === 'function' ? renderMessageMarkdown(content) : '';
+  if (!html) {
+    body.textContent = content == null || String(content).trim() === '' ? '(empty)' : String(content);
+    return body;
+  }
+  body.innerHTML = html;
+  return body;
+}
+
 function formatDate(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -1237,7 +1248,7 @@ function renderTimeline(options = {}) {
       if (payload.model) author.append(node('span', 'event-model', payload.model));
       head.append(author, node('span', 'event-time', formatDate(event.created_at)));
       card.append(head);
-      card.append(node('div', 'event-content', payload.content || '(empty)'));
+      card.append(messageContent(payload.content));
       if (payload.toolCalls && payload.toolCalls.length) {
         const tags = node('div', 'event-tags');
         for (const call of payload.toolCalls) {
@@ -1254,7 +1265,7 @@ function renderTimeline(options = {}) {
       card.append(head);
 
       if (event.type === 'message.created') {
-        card.append(node('div', 'event-content', payload.content || '(empty)'));
+        card.append(messageContent(payload.content));
           if (payload.untrusted) card.append(node('div', 'untrusted-note', t('timeline.untrusted')));
         if (payload.toolCalls && payload.toolCalls.length) {
           const tags = node('div', 'event-tags');

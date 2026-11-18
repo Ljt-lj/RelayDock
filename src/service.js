@@ -151,12 +151,20 @@ class RelayService {
       maxOutputBytes: this.maxOutputBytes
     });
 
+    let recentWorkspaces = settings.recentWorkspaces || [previous];
     if (options.persist !== false) {
-      const recent = [resolved, previous, ...(settings.recentWorkspaces || [])];
-      await this.saveSettings({ workspace: resolved, recentWorkspaces: recent });
+      recentWorkspaces = [resolved, previous, ...(settings.recentWorkspaces || [])];
+      const saved = await this.saveSettings({ workspace: resolved, recentWorkspaces });
+      recentWorkspaces = saved.recentWorkspaces;
     }
 
-    return this.getWorkspace();
+    // Do not call getWorkspace() here: it awaits init() and can deadlock when
+    // applyWorkspace runs inside the init() ready promise.
+    return {
+      workspace: this.workspace,
+      dataDir: this.dataDir,
+      recentWorkspaces
+    };
   }
 
   async setWorkspace(inputPath) {

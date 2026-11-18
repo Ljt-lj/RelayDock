@@ -1,5 +1,6 @@
 'use strict';
 
+const { effectiveConstraints, taskPolicyFromContract } = require('./task-policy');
 const { redactText } = require('./utils');
 
 function approximateTokens(text) {
@@ -60,6 +61,8 @@ function buildRelayPacket(input) {
     ? checkpoint.nextSteps
     : ['Inspect the most relevant files', 'Implement the next unfinished step', 'Run focused tests and report the diff'];
   const decisions = contract.decisions || checkpoint.decisions || [];
+  const constraints = effectiveConstraints(contract);
+  const policy = taskPolicyFromContract(contract);
 
   const sections = [];
   sections.push([
@@ -78,7 +81,9 @@ function buildRelayPacket(input) {
   ].join('\n'));
   sections.push([
     '## 3. Current task constraints',
-    listOrNone(contract.constraints || [])
+    listOrNone(constraints),
+    '',
+    'Tool-step budget: ' + policy.maxSteps
   ].join('\n'));
   sections.push([
     '## 4. Latest checkpoint summary',

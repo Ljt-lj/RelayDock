@@ -17,6 +17,12 @@ const state = {
   tab: 'checkpoint',
   modalMode: null,
   busy: false,
+  leases: [],
+  approvalGates: [],
+  pendingTurns: new Set(),
+  pendingApprovals: new Set(),
+  refreshPromise: null,
+  refreshSessionId: null,
   timelineMode: localStorage.getItem(TIMELINE_MODE_KEY) === 'chat' ? 'chat' : 'full'
 };
 
@@ -65,6 +71,141 @@ function shortPath(value) {
   return value.length > 70 ? '…' + value.slice(-69) : value;
 }
 
+function normalizedWorkspace(value) {
+  return String(value || '')
+    .replace(/\//g, '\\')
+    .replace(/\\+$/g, '')
+    .toLowerCase();
+}
+
+function leaseForSession(sessionId) {
+  return (state.leases || []).find((lease) => lease.sessionId === sessionId) || null;
+}
+
+function leaseForWorkspace(session, exceptSessionId = null) {
+  if (!session || !session.workspace) return null;
+  const workspace = normalizedWorkspace(session.workspace);
+  return (state.leases || []).find((lease) => (
+    lease.sessionId !== exceptSessionId
+    && lease.sessionId !== session.id
+    && normalizedWorkspace(lease.workspace) === workspace
+  )) || null;
+}
+
+function sessionLineageId(session) {
+  return String(session && session.contract && session.contract.lineageId || session && session.id || '');
+}
+
+function approvalGateForSession(sessionId) {
+  return (state.approvalGates || []).find((gate) => gate.sessionId === sessionId) || null;
+}
+
+function approvalGateConflictForSession(session, ignoreApprovalId = null) {
+  if (!session) return null;
+  const workspace = normalizedWorkspace(session.workspace);
+  const lineageId = sessionLineageId(session);
+  return (state.approvalGates || []).find((gate) => (
+    gate.approvalId !== ignoreApprovalId
+    && gate.sessionId !== session.id
+    && (
+      (workspace && normalizedWorkspace(gate.workspace) === workspace)
+      || (lineageId && String(gate.lineageId || '') === lineageId)
+    )
+  )) || null;
+}
+
+function blockingApprovalGateForSession(session, ignoreApprovalId = null) {
+  if (!session) return null;
+  const workspace = normalizedWorkspace(session.workspace);
+  const lineageId = sessionLineageId(session);
+  return (state.approvalGates || []).find((gate) => (
+    gate.approvalId !== ignoreApprovalId
+    && (
+      gate.sessionId === session.id
+      || (workspace && normalizedWorkspace(gate.workspace) === workspace)
+      || (lineageId && String(gate.lineageId || '') === lineageId)
+    )
+  )) || null;
+}
+
+function approvalGateConflictLabel(session, gate) {
+  if (!session || !gate) return '';
+  if (normalizedWorkspace(gate.workspace) === normalizedWorkspace(session.workspace)) {
+    return '工作区审批阻塞';
+  }
+  if (String(gate.lineageId || '') === sessionLineageId(session)) {
+    return '接力任务待审批';
+  }
+  return '审批阻塞';
+}
+
+function pendingSessionForWorkspace(session) {
+  if (!session || !session.workspace) return null;
+  const workspace = normalizedWorkspace(session.workspace);
+  return state.sessions.find((item) => (
+    item.id !== session.id
+    && isSessionRunning(item.id)
+    && normalizedWorkspace(item.workspace) === workspace
+  )) || null;
+}
+
+function sessionActivity(session) {
+  if (!session) return { lease: null, pending: false, approvalGate: null, conflict: null };
+  const lease = leaseForSession(session.id);
+  const pending = state.pendingTurns.has(session.id) || state.pendingApprovals.has(session.id);
+  const approvalGate = approvalGateForSession(session.id);
+  const workspaceConflict = leaseForWorkspace(session);
+  const approvalConflict = approvalGateConflictForSession(session);
+  const pendingConflict = pendingSessionForWorkspace(session);
+  const conflict = lease || pending || approvalGate
+    ? null
+    : workspaceConflict || approvalConflict || (pendingConflict ? {
+      sessionId: pendingConflict.id,
+      providerId: '另一个任务',
+      pending: true
+    } : null);
+  return { lease, pending, approvalGate, conflict };
+}
+
+function isSessionRunning(sessionId) {
+  return Boolean(
+    leaseForSession(sessionId)
+    || approvalGateForSession(sessionId)
+    || state.pendingTurns.has(sessionId)
+    || state.pendingApprovals.has(sessionId)
+  );
+}
+
+function sessionActionBlocker(session) {
+  const activity = sessionActivity(session);
+  if (activity.pending) return '当前任务正在提交操作';
+  if (activity.lease) return '当前任务正在执行';
+  if (activity.approvalGate) return '当前任务正在等待工具审批';
+  if (activity.conflict && activity.conflict.approvalId) {
+    return approvalGateConflictLabel(session, activity.conflict) + '，请先处理关联审批';
+  }
+  if (activity.conflict) return '当前任务或工作区正在执行其他操作';
+  return '';
+}
+
+function approvalResolutionBlocker(session, approvalId) {
+  if (!session) return '当前任务不存在';
+  if (state.pendingApprovals.has(session.id)) return '当前审批正在提交';
+  const lease = leaseForSession(session.id) || leaseForWorkspace(session);
+  if (lease) return '当前任务或工作区正在执行其他操作';
+  const gate = blockingApprovalGateForSession(session, approvalId);
+  if (gate) {
+    if (gate.sessionId === session.id) return '当前任务还有另一项待审批工具';
+    if (normalizedWorkspace(gate.workspace) === normalizedWorkspace(session.workspace)) {
+      return '同一工作区还有待审批工具';
+    }
+    return '同一接力任务线还有待审批工具';
+  }
+  const pendingConflict = pendingSessionForWorkspace(session);
+  if (pendingConflict) return '同一工作区还有任务正在执行';
+  return '';
+}
+
 function showToast(message, error = false) {
   elements.toast.textContent = message;
   elements.toast.className = 'toast' + (error ? ' error' : '');
@@ -82,11 +223,16 @@ async function api(path, options = {}) {
   });
   if (!response.ok) {
     let detail = '请求失败';
+    let code = 'REQUEST_FAILED';
     try {
       const body = await response.json();
       detail = body.error && body.error.message ? body.error.message : detail;
+      code = body.error && body.error.code ? body.error.code : code;
     } catch {}
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.code = code;
+    error.status = response.status;
+    throw error;
   }
   const type = response.headers.get('content-type') || '';
   return type.includes('application/json') ? response.json() : response.text();
@@ -114,7 +260,8 @@ async function loadOverview(selectFirst = false) {
   state.sessions = data.sessions;
   state.providers = data.providers;
   state.approvals = data.approvals;
-  state.leases = data.leases;
+  state.leases = data.leases || [];
+  state.approvalGates = data.approvalGates || [];
   state.workspace = data.workspace || state.workspace;
   state.defaultWorkspace = data.defaultWorkspace || data.workspace || state.defaultWorkspace;
   state.recentWorkspaces = data.recentWorkspaces || [];
@@ -134,6 +281,13 @@ async function loadOverview(selectFirst = false) {
 
 function openWorkspaceModal() {
   const session = state.activeSession;
+  if (session) {
+    const blocker = sessionActionBlocker(session);
+    if (blocker) {
+      showToast(blocker, true);
+      return;
+    }
+  }
   const fields = [];
   fields.push(modalField(
     session ? '本会话工作区路径' : '新建会话默认工作区',
@@ -224,26 +378,58 @@ async function selectSession(sessionId) {
   renderAll();
 }
 
-async function refreshActive() {
-  if (!state.activeSession) {
+async function refreshActive(options = {}) {
+  const activeSession = state.activeSession;
+  if (!activeSession) {
     await loadOverview(false);
     return;
   }
-  const sessionId = state.activeSession.id;
-  const previousUpdatedAt = state.activeSession.updatedAt;
-  const data = await api('/api/sessions/' + encodeURIComponent(sessionId));
-  state.activeSession = data.session;
-  state.approvals = data.approvals || [];
-  state.timeline = (await api('/api/sessions/' + encodeURIComponent(sessionId) + '/timeline')).events;
-  const overview = await api('/api/overview');
-  state.sessions = overview.sessions;
-  state.providers = overview.providers;
-  state.leases = overview.leases;
-  if (previousUpdatedAt !== data.session.updatedAt) {
-    state.packet = null;
-    state.diff = null;
+  const sessionId = activeSession.id;
+  if (state.refreshPromise && state.refreshSessionId === sessionId) {
+    if (!options.force) return state.refreshPromise;
+    await state.refreshPromise.catch(() => {});
+    if (!state.activeSession || state.activeSession.id !== sessionId) return;
   }
-  renderAll();
+  const previousUpdatedAt = activeSession.updatedAt;
+  const task = (async () => {
+    const [data, timeline, overview] = await Promise.all([
+      api('/api/sessions/' + encodeURIComponent(sessionId)),
+      api('/api/sessions/' + encodeURIComponent(sessionId) + '/timeline'),
+      api('/api/overview')
+    ]);
+    if (!state.activeSession || state.activeSession.id !== sessionId) return;
+    state.activeSession = data.session;
+    state.approvals = data.approvals || [];
+    state.timeline = timeline.events;
+    state.sessions = overview.sessions;
+    state.providers = overview.providers;
+    state.leases = overview.leases || [];
+    state.approvalGates = overview.approvalGates || [];
+    if (previousUpdatedAt !== data.session.updatedAt) {
+      state.packet = null;
+      state.diff = null;
+    }
+    renderAll();
+  })();
+  state.refreshPromise = task;
+  state.refreshSessionId = sessionId;
+  try {
+    return await task;
+  } finally {
+    if (state.refreshPromise === task) {
+      state.refreshPromise = null;
+      state.refreshSessionId = null;
+    }
+  }
+}
+
+async function refreshAfterSession(sessionId) {
+  if (state.activeSession && state.activeSession.id === sessionId) {
+    await refreshActive({ force: true });
+    return;
+  }
+  await loadOverview(false);
+  if (state.activeSession) await refreshActive();
 }
 
 function renderAll() {
@@ -269,7 +455,11 @@ function renderSessions() {
     return;
   }
   for (const session of state.sessions) {
-    const row = node('div', 'session-row' + (state.activeSession && state.activeSession.id === session.id ? ' active' : ''));
+    const activity = sessionActivity(session);
+    const activeClass = state.activeSession && state.activeSession.id === session.id ? ' active' : '';
+    const runningClass = activity.lease || activity.pending ? ' running' : '';
+    const blockedClass = activity.approvalGate || activity.conflict ? ' blocked' : '';
+    const row = node('div', 'session-row' + activeClass + runningClass + blockedClass);
     const button = node('button', 'session-item');
     button.type = 'button';
     button.title = session.title || '';
@@ -279,6 +469,15 @@ function renderSessions() {
       button.append(node('span', 'session-item-workspace', pathTail(session.workspace)));
     }
     const meta = node('span', 'session-item-meta');
+    if (activity.approvalGate) {
+      meta.append(node('span', 'session-item-status blocked', '等待审批'));
+    } else if (activity.conflict && activity.conflict.approvalId) {
+      meta.append(node('span', 'session-item-status blocked', approvalGateConflictLabel(session, activity.conflict)));
+    } else if (activity.lease || activity.pending) {
+      meta.append(node('span', 'session-item-status running', '运行中'));
+    } else if (activity.conflict) {
+      meta.append(node('span', 'session-item-status blocked', '工作区占用'));
+    }
     meta.append(node('span', '', session.counts.messages + ' 消息'));
     meta.append(node('span', '', session.counts.checkpoints + ' 快照'));
     meta.append(node('span', '', formatDate(session.updatedAt)));
@@ -290,6 +489,15 @@ function renderSessions() {
     remove.title = '硬删除此接力任务';
     remove.setAttribute('aria-label', '硬删除此接力任务');
     remove.textContent = '删除';
+    remove.disabled = Boolean(activity.lease || activity.pending || activity.approvalGate || activity.conflict);
+    if (remove.disabled) {
+      remove.title = activity.approvalGate
+        ? '任务等待审批，处理完成后才能删除'
+        : activity.conflict && activity.conflict.approvalId
+          ? '关联任务等待审批，处理完成后才能删除'
+          : '任务运行中，结束后才能删除';
+      remove.setAttribute('aria-label', remove.title);
+    }
     remove.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -303,6 +511,11 @@ function renderSessions() {
 
 async function deleteSession(session) {
   if (!session || !session.id) return;
+  const blocker = sessionActionBlocker(session);
+  if (blocker) {
+    showToast(blocker, true);
+    return;
+  }
   const label = shortenLabel(session.title, 18);
   const confirmed = window.confirm('确定硬删除接力任务「' + label + '」？\n将永久删除其时间线、Checkpoint 与绑定，且不可恢复。');
   if (!confirmed) return;
@@ -356,7 +569,7 @@ function renderHeader() {
   if (!session) {
     elements.activeTitle.textContent = '选择一个任务';
     elements.activeMeta.textContent = 'RelayDock 会在这里合并 Codex 与外部模型的进展。';
-    elements.leaseBadge.textContent = '无写锁';
+    elements.leaseBadge.textContent = '空闲';
     elements.leaseBadge.className = 'status-pill neutral';
     elements.approvalCount.textContent = '0 审批';
     elements.sendButton.disabled = true;
@@ -369,13 +582,37 @@ function renderHeader() {
   elements.activeMeta.textContent = goal + workspaceBit;
   elements.activeMeta.title = (session.workspace || '') + (goal ? ('\n' + goal) : '');
   syncWorkspaceLabel();
-  const lease = (state.leases || []).find((item) => item.sessionId === session.id);
-  elements.leaseBadge.textContent = lease ? lease.providerId + ' 持有写锁' : '无写锁';
-  elements.leaseBadge.className = 'status-pill ' + (lease ? 'warning' : 'neutral');
+  const activity = sessionActivity(session);
+  if (activity.approvalGate) {
+    elements.leaseBadge.textContent = '等待工具审批';
+    elements.leaseBadge.className = 'status-pill warning';
+  } else if (activity.conflict && activity.conflict.approvalId) {
+    elements.leaseBadge.textContent = approvalGateConflictLabel(session, activity.conflict);
+    elements.leaseBadge.className = 'status-pill warning';
+  } else if (activity.lease || activity.pending) {
+    elements.leaseBadge.textContent = (activity.lease && activity.lease.providerId
+      ? activity.lease.providerId
+      : '当前任务') + ' 执行中';
+    elements.leaseBadge.className = 'status-pill warning';
+  } else if (activity.conflict) {
+    elements.leaseBadge.textContent = '工作区被 ' + activity.conflict.providerId + ' 占用';
+    elements.leaseBadge.className = 'status-pill warning';
+  } else {
+    elements.leaseBadge.textContent = '空闲';
+    elements.leaseBadge.className = 'status-pill neutral';
+  }
   const count = state.approvals.length;
   elements.approvalCount.textContent = count + ' 审批';
   elements.approvalCount.className = 'status-pill ' + (count ? 'warning' : 'neutral');
-  elements.sendButton.disabled = state.busy || !state.providers.length;
+  const actionBlocked = Boolean(activity.lease || activity.pending || activity.approvalGate || activity.conflict);
+  elements.sendButton.disabled = !state.providers.length || actionBlocked;
+  elements.sendButton.title = actionBlocked
+    ? sessionActionBlocker(session)
+    : '把当前指令交给接手模型';
+  if (elements.workspaceButton) elements.workspaceButton.disabled = state.busy || actionBlocked;
+  elements.checkpointButton.disabled = state.busy || actionBlocked;
+  elements.packetButton.disabled = state.busy || actionBlocked;
+  elements.exportButton.disabled = state.busy || actionBlocked;
 }
 
 function eventClass(event) {
@@ -614,6 +851,18 @@ function renderCheckpointInspector() {
     row.append(node('span', 'kv-key', label), node('span', 'kv-value', contract[key] || '—'));
     contractRows.append(row);
   }
+  const completionFirstRow = node('div', 'kv-row');
+  completionFirstRow.append(
+    node('span', 'kv-key', '完成优先'),
+    node('span', 'kv-value', contract.completeTaskFirst === false ? '已关闭' : '已开启')
+  );
+  contractRows.append(completionFirstRow);
+  const maxStepsRow = node('div', 'kv-row');
+  maxStepsRow.append(
+    node('span', 'kv-key', '工具步数'),
+    node('span', 'kv-value', String(contract.maxSteps || 32) + ' 步')
+  );
+  contractRows.append(maxStepsRow);
   contractSection.append(contractRows);
   const tags = node('div', 'tag-list');
   for (const item of (contract.constraints || []).slice(0, 10)) tags.append(node('span', 'tag', item));
@@ -647,7 +896,7 @@ function renderPacketInspector() {
 function renderApprovalInspector() {
   const heading = node('div', 'inspector-heading');
   const info = node('div');
-  info.append(node('h3', '', '写操作审批'), node('p', '', '批准后才执行，并在执行前检查工作区冲突。'));
+  info.append(node('h3', '', '工具审批'), node('p', '', '受保护工具批准后才执行；当前任务及其关联工作区、接力任务会保持阻塞。'));
   const refresh = node('button', 'secondary-button', '刷新');
   refresh.type = 'button';
   refresh.addEventListener('click', refreshActive);
@@ -659,14 +908,29 @@ function renderApprovalInspector() {
   }
   for (const approval of state.approvals) {
     const item = node('div', 'approval-item');
-    item.append(node('h4', '', approval.actionType === 'write_file' ? '文件写入' : '命令执行'));
+    const titles = {
+      propose_get_current_time: '读取系统时间',
+      propose_write_file: '文件写入',
+      propose_run_command: '命令执行'
+    };
+    const title = titles[approval.toolName]
+      || (approval.actionType === 'write_file'
+        ? '文件写入'
+        : approval.actionType === 'run_command'
+          ? '命令执行'
+          : '工具执行');
+    item.append(node('h4', '', title));
     item.append(node('div', 'approval-preview', approval.summary + '\n' + approval.preview));
     const actions = node('div', 'approval-actions');
     const reject = node('button', 'secondary-button', '拒绝');
     reject.type = 'button';
+    reject.disabled = state.pendingApprovals.has(state.activeSession.id);
     reject.addEventListener('click', () => resolveApproval(approval.approvalId, 'reject'));
     const approve = node('button', 'primary-button', '批准并继续');
     approve.type = 'button';
+    const blocker = approvalResolutionBlocker(state.activeSession, approval.approvalId);
+    approve.disabled = Boolean(blocker);
+    if (blocker) approve.title = blocker;
     approve.addEventListener('click', () => resolveApproval(approval.approvalId, 'approve'));
     actions.append(reject, approve);
     item.append(actions);
@@ -700,6 +964,8 @@ function renderDiffInspector() {
 
 async function createCheckpoint() {
   if (!state.activeSession) return;
+  const blocker = sessionActionBlocker(state.activeSession);
+  if (blocker) return showToast(blocker, true);
   setBusy(true);
   try {
     await api('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/checkpoints', { method: 'POST', body: {} });
@@ -716,6 +982,8 @@ async function createCheckpoint() {
 
 async function previewPacket() {
   if (!state.activeSession) return;
+  const blocker = sessionActionBlocker(state.activeSession);
+  if (blocker) return showToast(blocker, true);
   setBusy(true);
   try {
     const packet = await api('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/packet', { method: 'POST', body: {} });
@@ -733,56 +1001,91 @@ async function previewPacket() {
 }
 
 async function sendTurn() {
-  if (!state.activeSession) return;
+  const session = state.activeSession;
+  if (!session) return;
+  const sessionId = session.id;
+  if (state.pendingTurns.has(sessionId)) return;
+  const blocker = sessionActionBlocker(session);
+  if (blocker) return showToast(blocker, true);
   const providerId = elements.providerSelect.value;
   if (!providerId) return showToast('请先配置模型供应商', true);
-  setBusy(true);
+  const instruction = elements.composerText.value.trim();
+  state.pendingTurns.add(sessionId);
+  renderAll();
   try {
-    const result = await api('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/turn', {
+    const result = await api('/api/sessions/' + encodeURIComponent(sessionId) + '/turn', {
       method: 'POST',
-      body: { providerId, instruction: elements.composerText.value.trim(), maxSteps: 6 }
+      body: { providerId, instruction }
     });
-    elements.composerText.value = '';
-    await refreshActive();
-    if (result.status === 'approval_required') {
+    const stillSelected = state.activeSession && state.activeSession.id === sessionId;
+    if (stillSelected && instruction && elements.composerText.value.trim() === instruction) {
+      elements.composerText.value = '';
+    }
+    await refreshAfterSession(sessionId);
+    if (stillSelected && result.status === 'approval_required') {
       state.tab = 'approvals';
       setActiveTab('approvals');
       renderInspector();
-      showToast('模型请求执行写操作，请审批');
+      showToast('模型请求执行受保护工具，请审批');
     } else if (result.status === 'step_limit') {
       showToast('工具步数用尽，已强制汇总当前结论', true);
     } else {
       showToast('模型回合已完成');
     }
   } catch (error) {
-    await refreshActive().catch(() => {});
-    showToast(error.message, true);
+    await refreshAfterSession(sessionId).catch(() => {});
+    showToast(
+      error.code === 'WRITE_LEASE_BUSY'
+        ? '当前任务或同一工作区已有任务正在运行，请稍后重试'
+        : error.message,
+      true
+    );
   } finally {
-    setBusy(false);
+    state.pendingTurns.delete(sessionId);
+    renderAll();
   }
 }
 
 async function resolveApproval(approvalId, decision) {
-  setBusy(true);
+  const session = state.activeSession;
+  if (!session) return;
+  const sessionId = session.id;
+  if (state.pendingApprovals.has(sessionId)) return;
+  if (decision === 'approve') {
+    const blocker = approvalResolutionBlocker(session, approvalId);
+    if (blocker) return showToast(blocker, true);
+  }
+  state.pendingApprovals.add(sessionId);
+  renderAll();
   try {
     await api('/api/approvals/' + encodeURIComponent(approvalId) + '/resolve', {
       method: 'POST',
-      body: { decision, continueTurn: decision === 'approve', maxSteps: 6 }
+      body: { decision, continueTurn: decision === 'approve' }
     });
-    await refreshActive();
-    state.tab = 'approvals';
-    setActiveTab('approvals');
+    await refreshAfterSession(sessionId);
+    if (state.activeSession && state.activeSession.id === sessionId) {
+      state.tab = 'approvals';
+      setActiveTab('approvals');
+    }
     showToast(decision === 'approve' ? '操作已批准并继续执行' : '操作已拒绝');
   } catch (error) {
-    await refreshActive().catch(() => {});
-    showToast(error.message, true);
+    await refreshAfterSession(sessionId).catch(() => {});
+    showToast(
+      error.code === 'WRITE_LEASE_BUSY'
+        ? '当前任务或同一工作区已有任务正在运行，请稍后重试'
+        : error.message,
+      true
+    );
   } finally {
-    setBusy(false);
+    state.pendingApprovals.delete(sessionId);
+    renderAll();
   }
 }
 
 async function exportForCodex() {
   if (!state.activeSession) return;
+  const blocker = sessionActionBlocker(state.activeSession);
+  if (blocker) return showToast(blocker, true);
   try {
     const response = await fetch('/api/sessions/' + encodeURIComponent(state.activeSession.id) + '/export?format=markdown', {
       headers: { 'x-relaydock-token': state.token }
@@ -802,10 +1105,7 @@ async function exportForCodex() {
 
 function setBusy(value) {
   state.busy = value;
-  elements.sendButton.disabled = value || !state.activeSession || !state.providers.length;
-  elements.checkpointButton.disabled = value;
-  elements.packetButton.disabled = value;
-  elements.exportButton.disabled = value;
+  renderHeader();
 }
 
 function setActiveTab(tab) {
@@ -823,6 +1123,41 @@ function modalField(label, name, value = '', type = 'text', help = '') {
   wrap.append(input);
   if (help) wrap.append(node('small', '', help));
   return wrap;
+}
+
+function modalNumberField(label, name, value, min, max, help = '') {
+  const wrap = modalField(label, name, value, 'number', help);
+  const input = wrap.querySelector('input');
+  input.min = String(min);
+  input.max = String(max);
+  input.step = '1';
+  input.required = true;
+  return wrap;
+}
+
+function modalCheckbox(label, name, checked, help = '') {
+  const wrap = node('label', 'form-check');
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.name = name;
+  input.value = 'true';
+  input.checked = Boolean(checked);
+  const content = node('span', 'form-check-content');
+  content.append(node('strong', '', label));
+  if (help) content.append(node('small', '', help));
+  wrap.append(input, content);
+  return wrap;
+}
+
+function taskPolicyValues(values) {
+  const maxSteps = Number(values.maxSteps);
+  if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 100) {
+    throw new Error('最大工具步数必须是 1 到 100 之间的整数。');
+  }
+  return {
+    completeTaskFirst: values.completeTaskFirst === 'true',
+    maxSteps
+  };
 }
 
 function openModal(title, fields, submitLabel, onSubmit) {
@@ -867,14 +1202,27 @@ function openSessionModal() {
   fields.push(goal);
   fields.push(modalField('验收标准（每行一条）', 'acceptanceCriteria', '', 'textarea'));
   fields.push(modalField('约束（每行一条）', 'constraints', '', 'textarea'));
+  const policy = node('div', 'task-policy-fields');
+  policy.append(
+    modalCheckbox(
+      '完成优先',
+      'completeTaskFirst',
+      true,
+      '需要未注册能力时，先申请受保护工具权限并继续推进，而不是提前结束任务。'
+    ),
+    modalNumberField('最大工具步数', 'maxSteps', 32, 1, 100, '默认 32，可按任务复杂度调整。')
+  );
+  fields.push(policy);
   openModal('新建会话', fields, '创建会话', async (values) => {
+    const taskPolicy = taskPolicyValues(values);
     const session = await api('/api/sessions', {
       method: 'POST',
       body: {
         title: values.title,
         goal: values.goal,
         acceptanceCriteria: values.acceptanceCriteria.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-        constraints: values.constraints.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+        constraints: values.constraints.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+        ...taskPolicy
       }
     });
     await loadOverview(false);
@@ -1040,8 +1388,20 @@ function openContractModal() {
   fields.push(modalField('约束（每行一条）', 'constraints', (contract.constraints || []).join('\n'), 'textarea'));
   fields.push(modalField('关键决策（每行一条）', 'decisions', (contract.decisions || []).join('\n'), 'textarea'));
   fields.push(modalField('下一步（每行一条）', 'nextSteps', (contract.nextSteps || []).join('\n'), 'textarea'));
+  const policy = node('div', 'task-policy-fields');
+  policy.append(
+    modalCheckbox(
+      '完成优先',
+      'completeTaskFirst',
+      contract.completeTaskFirst !== false,
+      '需要未注册能力时，先申请受保护工具权限并继续推进，而不是提前结束任务。'
+    ),
+    modalNumberField('最大工具步数', 'maxSteps', contract.maxSteps || 32, 1, 100, '默认 32，可按任务复杂度调整。')
+  );
+  fields.push(policy);
   openModal('编辑任务契约', fields, '保存契约', async (values) => {
     const lines = (value) => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    const taskPolicy = taskPolicyValues(values);
     await api('/api/sessions/' + encodeURIComponent(state.activeSession.id), {
       method: 'PATCH',
       body: {
@@ -1051,7 +1411,8 @@ function openContractModal() {
         acceptanceCriteria: lines(values.acceptanceCriteria),
         constraints: lines(values.constraints),
         decisions: lines(values.decisions),
-        nextSteps: lines(values.nextSteps)
+        nextSteps: lines(values.nextSteps),
+        ...taskPolicy
       }
     });
     await refreshActive();
@@ -1138,7 +1499,7 @@ document.querySelectorAll('.tab-button').forEach((button) => {
 });
 
 setInterval(() => {
-  if (!state.busy && state.activeSession) refreshActive().catch(() => {});
+  if (state.activeSession) refreshActive().catch(() => {});
 }, 12000);
 
 bootstrap();

@@ -13,8 +13,10 @@ RelayDock 是一个面向本地编码 Agent 的接力工作台：把 Codex 中�
 - Relay Packet Context Compiler；
 - OpenAI Chat Completions 兼容 Provider Adapter；
 - 默认 DeepSeek 配置；
-- 读取工具直执行、写入与命令执行前审批；
-- 单写入者租约、工作区冲突检查和密钥脱敏；
+- 读取工具直执行；文件写入、命令执行、系统时间读取等受保护工具先审批；
+- 任务级“完成优先”策略默认开启：缺少专用工具时通过受保护工具申请权限并继续任务；
+- 任务级工具步数预算默认 32，可在每个任务中配置为 1–100；
+- 会话级单回合租约、工作区写入互斥、跨工作区并发和密钥脱敏；
 - 本地 HTTP API；
 - RelayDock Studio 可视化工作台；
 - OpenAI 兼容 Model Gateway（`/v1`），可被 Codex / Cursor 当作模型端点；
@@ -106,10 +108,10 @@ node .\bin\relaydock.js checkpoint --session SESSION_ID --summary "核心代码�
 # 4. 预览将发送给接手模型的上下文
 node .\bin\relaydock.js packet --session SESSION_ID
 
-# 5. 交给 DeepSeek 继续
-node .\bin\relaydock.js turn --session SESSION_ID --provider deepseek --instruction "继续完成测试并修复失败项"
+# 5. 交给 DeepSeek 继续（--max-steps 是本次调用的临时覆盖）
+node .\bin\relaydock.js turn --session SESSION_ID --provider deepseek --instruction "继续完成测试并修复失败项" --max-steps 48
 
-# 6. 处理模型提出的写操作
+# 6. 处理模型提出的受保护工具请求
 node .\bin\relaydock.js approval:list --session SESSION_ID
 node .\bin\relaydock.js approval:resolve --approval APPROVAL_ID --decision approve --continue
 
@@ -127,16 +129,20 @@ node .\bin\relaydock.js packet --session SESSION_ID --json
 node .\bin\relaydock.js export --session SESSION_ID --format json
 ~~~
 
+每个任务默认开启“完成优先”，并保存独立的工具步数预算（默认 32，范围 1–100）。可在 Studio 新建或编辑任务契约时调整，也可通过 API/MCP 的 `completeTaskFirst` 与 `maxSteps` 字段设置。`turn` 或审批继续传入的 `maxSteps` 只对当前调用生效，不会修改任务配置。
+
 ## Studio 工作流
 
-1. 新建会话，填写目标、约束和验收标准。
+1. 新建会话，填写目标、约束和验收标准；按需调整默认勾选的“完成优先”和最大工具步数。
 2. 点击“创建 Checkpoint”，确认 Git 分支、文件数量和变更状态。
 3. 在“预览 Relay Packet”中检查实际发送的上下文与裁剪统计。
 4. 配置并测试 Provider。
 5. 在底部输入下一步指令，交给接手模型。
-6. 文件写入或命令执行会暂停并进入“审批”；批准后才执行，执行前会检查文件哈希冲突。
+6. 文件写入、命令执行、读取系统时间等受保护工具会暂停并进入“审批”；批准后才真实执行。模型缺少专用工具时，“完成优先”会要求它通过 `propose_run_command` 申请具体能力，而不是提前结束任务。时间读取会调用 `Get-Date`，文件写入会检查哈希冲突。
 7. 点击“导出给 Codex”，通过统一时间线把增量结果带回 Codex。
 8. 在 Diff 面板查看未提交改动。
+
+不同会话绑定不同工作区时可以同时运行；同一会话同一时间只运行一个回合，同一工作区的执行、审批和续跑会互斥。同一前置任务派生的接力任务还会共享审批阻塞。Studio 会在任务列表中标记“运行中”“工作区占用”和“等待审批”，并允许在任务执行期间切换到其他工作继续操作。详细规则见 [并发执行](docs/concurrency.md)。
 
 ## 作为 Codex Skill 使用
 
@@ -162,7 +168,7 @@ Skill 不负责自动读取 Codex 内部隐藏历史，也不承诺复制模型�
 - API Key 只来自环境变量或进程内存。
 - 外部模型消息标记为 untrusted。
 - 默认排除 .env、密钥、私钥和常见敏感路径。
-- 写文件和运行命令都必须人工审批。
+- 写文件、运行命令和读取系统时间都必须人工审批。
 - 命令不经过 shell，并限制工作目录、超时和输出大小。
 
 ## 当前 MVP 边界
@@ -172,7 +178,8 @@ Skill 不负责自动读取 Codex 内部隐藏历史，也不承诺复制模型�
 - 不会自动 Hook Codex 客户端，也不会自动同步 Codex 私有历史。
 - 不是可直接替换 Codex 全局模型的 Model Gateway。
 - 写租约是单进程内存状态，不是多实例分布式锁。
-- Tool Proxy 目前提供三个只读工具和两个审批型变更工具。
+- 并发执行以会话和工作区为边界；同一工作区不会并发写入。
+- Tool Proxy 目前提供三个只读工具和三个审批型工具：文件写入、命令执行、系统时间读取。
 - 已提供 stdio MCP 与 Chat Completions Gateway；尚未实现 Responses API、SSE/流式 UI、费用预算和自动额度检测。
 - RelayDock 自己运行有限的 Agent Loop；复杂工具能力仍取决于目标模型的 Tool Call 兼容性。
 

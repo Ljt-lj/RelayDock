@@ -28,7 +28,7 @@ Requests with an Origin header must be same-origin. The server rejects cross-ori
 | --- | --- | --- |
 | GET | /api/health | Liveness and version |
 | GET | /api/bootstrap | Studio Token, version, workspace |
-| GET | /api/overview | Sessions, Providers, approvals, leases, data directory |
+| GET | /api/overview | Sessions, Providers, approvals, approval gates, leases, data directory |
 | GET | /api/providers | List Providers without secrets |
 | POST | /api/providers | Create or update a Provider |
 | GET | /api/providers/:id | Read one Provider |
@@ -82,11 +82,20 @@ x-relaydock-token: <token>
   "decisions": ["沿用现有 Token 格式"],
   "openIssues": ["刷新 Token 尚未接入"],
   "nextSteps": ["修复登录集成测试"],
-  "originProvider": "codex"
+  "completeTaskFirst": true,
+  "maxSteps": 32,
+  "originProvider": "codex",
+  "predecessorSessionId": "source-session-id"
 }
 ~~~
 
 `workspace` is optional; when omitted the server uses the default workspace from `PUT /api/workspace` / process startup. Tools, checkpoints, diffs, and approvals for that session use `session.workspace` only.
+
+`completeTaskFirst` defaults to `true`. When enabled, RelayDock adds a completion-first constraint to the Relay Packet and system prompt. If the provider asks for a capability that is not registered as a dedicated tool, the agent loop returns recovery guidance and requires the model to request the concrete executable or script through `propose_run_command`. The resulting approval is an expected pause; after the real tool result arrives, the model continues the task.
+
+`maxSteps` defaults to `32` and accepts integers from `1` to `100`. It is persisted on the task contract and governs normal turns and approval continuations. Existing sessions created before these fields existed are backfilled with `true` and `32` when reconstructed.
+
+`predecessorSessionId` creates a continuation in the same relay lineage and inherits the predecessor's `lineageId`. When no predecessor is supplied, an explicit `lineageId` can define the shared lineage; otherwise the new Session id becomes its own lineage. A pending approval blocks every Session that shares the workspace or lineage.
 
 The returned session includes id, title, workspace, contract, counts, lastMessage, and latestCheckpoint.
 
@@ -101,11 +110,13 @@ x-relaydock-token: <token>
 ~~~json
 {
   "workspace": "D:\\AnotherRepo",
-  "goal": "updated goal"
+  "goal": "updated goal",
+  "completeTaskFirst": false,
+  "maxSteps": 64
 }
 ~~~
 
-`workspace` must be an existing directory. Changing it does not alter the global default workspace or other sessions.
+`workspace` must be an existing directory. Changing it does not alter the global default workspace or other sessions. `completeTaskFirst` and `maxSteps` update the persistent task policy.
 
 ## Record a Message
 
@@ -180,9 +191,11 @@ POST /api/sessions/:id/turn
 {
   "providerId": "deepseek",
   "instruction": "继续修复登录集成测试",
-  "maxSteps": 4
+  "maxSteps": 48
 }
 ~~~
+
+`maxSteps` is optional. When omitted, RelayDock uses the task's persistent `contract.maxSteps`; when supplied, it overrides only this call and does not mutate the contract.
 
 Possible result statuses:
 
@@ -190,9 +203,55 @@ Possible result statuses:
 - approval_required;
 - step_limit.
 
-The server acquires a single-provider write lease for the session, creates a fresh checkpoint, compiles a packet, calls the Provider, records external messages as untrusted, and executes only read-only tools automatically. Mutations return a pending approval.
+The server acquires a session lease and workspace lease before recording the instruction, creates a fresh checkpoint, compiles a packet, calls the Provider, records external messages as untrusted, and executes read-only tools automatically. Protected tools, including file writes, commands, and current-time lookup, return a pending approval instead of executing immediately.
 
 A failed Provider call is recorded as provider.error and handoff.completed with status failed. Existing checkpoints remain intact.
+
+If the same session already has a running turn, or another session is using the same workspace, the request returns `409 WRITE_LEASE_BUSY`. The rejected instruction is not recorded in the ledger.
+
+## Concurrent Turns
+
+Turns in different sessions can overlap when their workspaces are different. The server coordinates execution using three boundaries:
+
+- one active turn per session;
+- one active operation per resolved workspace;
+- one approval gate shared by the same Session, workspace, or relay lineage.
+
+The ordinary lease is held through Provider calls and read-only tool execution. When a protected tool creates an approval, that lease is released but the approval gate remains. The gate continues to block the owning Session, all Sessions using the same workspace, and all Sessions in the same lineage. After approval, RelayDock acquires the lease again and keeps it through tool execution and the optional continuation turn. Leases renew every 60 seconds with a 10-minute expiry. Windows workspace paths are compared case-insensitively.
+
+The same rule applies to workspace changes, deletion, approved mutations, and Gateway completions that write to a session ledger.
+
+`GET /api/overview` exposes active leases and approval gates. A gate can still be active when `leases` is empty:
+
+~~~json
+{
+  "leases": [
+    {
+      "sessionId": "session-id",
+      "providerId": "deepseek",
+      "kind": "turn",
+      "workspace": "D:\\YourRepo",
+      "acquiredAt": "2026-11-18T08:00:00.000Z",
+      "expiresAt": "2026-11-18T08:10:00.000Z"
+    }
+  ],
+  "approvalGates": [
+    {
+      "approvalId": "approval-id",
+      "sessionId": "session-id",
+      "providerId": "deepseek",
+      "toolName": "propose_get_current_time",
+      "workspace": "D:\\YourRepo",
+      "lineageId": "source-session-id",
+      "handoffId": "handoff-id",
+      "checkpointId": "checkpoint-id",
+      "createdAt": "2026-11-18T08:00:00.000Z"
+    }
+  ]
+}
+~~~
+
+Pending approval files are loaded during service startup, so these gates are restored after a restart. Conflicting turns return `409 WRITE_LEASE_BUSY`, and the rejected instruction is not recorded in the Session ledger.
 
 ## Resolve an Approval
 
@@ -204,15 +263,27 @@ POST /api/approvals/:id/resolve
 {
   "decision": "approve",
   "continueTurn": true,
-  "maxSteps": 4
+  "maxSteps": 48
 }
 ~~~
 
-Approval runs outside the original HTTP turn. Mutation proposals record the session workspace at proposal time; resolve uses that root even if the UI later selects another session. A write approval rechecks the previously observed file hash before writing. A command approval runs without a shell, inside that workspace, with a restricted environment, timeout, and output limit.
+The approval continuation uses the task's persistent `maxSteps` when this field is omitted. Supplying it overrides only the continuation call.
+
+Approval runs outside the original HTTP turn. Protected-tool proposals record the Session, workspace, lineage, handoff, checkpoint, and original tool call at proposal time. Resolve uses that recorded workspace even if the Studio later selects another Session.
+
+Approved actions execute the real tool:
+
+- file writes recheck the previously observed file hash before writing;
+- commands run without a shell inside the recorded workspace, with a restricted environment, timeout, and output limit;
+- `propose_get_current_time` runs `Get-Date -Format o` through PowerShell on Windows and returns the actual local timestamp with its UTC offset.
 
 Codex/Cursor import binds the inferred path onto `session.workspace` only; it does not switch the process default workspace unless no path can be inferred (then the new session uses the default).
 
 Use decision reject to discard the pending action without executing it.
+
+Approving a protected action reacquires the same Session and workspace lease used by turns, ignoring only its own approval gate. Any other lease or approval gate in the same Session, workspace, or lineage returns `409 WRITE_LEASE_BUSY`.
+
+When `continueTurn` is true, RelayDock injects the original assistant tool call and the real tool result into the paused model conversation before requesting the next assistant step. The continuation uses the task's persistent tool-step budget unless `maxSteps` explicitly overrides it. MCP `relaydock_approval_resolve` defaults `continueTurn` to true; pass `false` to execute the tool without resuming the model. Rejecting an action does not acquire a workspace lease and clears the gate.
 
 ## Provider Configuration
 
@@ -258,11 +329,33 @@ Common HTTP statuses:
 - 401: missing or invalid RelayDock Token;
 - 403: cross-origin request;
 - 404: resource not found;
-- 409: write lease conflict;
+- 409: session, workspace, lineage, or approval-gate conflict (`WRITE_LEASE_BUSY`);
 - 413: request or message too large;
 - 415: non-JSON request body;
 - 429: Provider rate limit;
 - 502: Provider/network/protocol failure.
+
+Provider network failures preserve the underlying connection cause without exposing credentials or query parameters. The API returns sanitized diagnostics in both `message` and `details`:
+
+~~~json
+{
+  "error": {
+    "code": "PROVIDER_NETWORK_ERROR",
+    "message": "Provider network request failed: POST https://api.deepseek.com/chat/completions (EACCES, connect, api.deepseek.com:443). The local process was not allowed to open the connection. Check firewall, proxy, VPN, and app network permissions.",
+    "details": {
+      "method": "POST",
+      "url": "https://api.deepseek.com/chat/completions",
+      "code": "EACCES",
+      "syscall": "connect",
+      "address": "api.deepseek.com",
+      "port": "443",
+      "hint": "The local process was not allowed to open the connection. Check firewall, proxy, VPN, and app network permissions."
+    }
+  }
+}
+~~~
+
+Common causes include `EACCES`/Windows Sockets `10013` (firewall or outbound access denied), `ENOTFOUND`/`EAI_AGAIN` (DNS), `ECONNREFUSED` (wrong endpoint or proxy), `ECONNRESET` (connection reset), and `ETIMEDOUT` (reachability timeout). `PROVIDER_TIMEOUT` includes `details.method`, `details.url`, and `details.timeoutMs`.
 
 ## Local Data
 

@@ -72,12 +72,12 @@ function apiError(response, error) {
     else if (String(code).startsWith('PROVIDER_')) status = 502;
     else status = 500;
   }
-  sendJson(response, status, {
-    error: {
-      code,
-      message: String(error.message || 'Request failed')
-    }
-  });
+  const body = {
+    code,
+    message: String(error.message || 'Request failed')
+  };
+  if (error.details && typeof error.details === 'object') body.details = error.details;
+  sendJson(response, status, { error: body });
 }
 
 function safeDownloadName(value, extension) {

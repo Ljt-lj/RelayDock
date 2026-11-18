@@ -20,7 +20,7 @@ const state = {
 
 const elements = {};
 for (const id of [
-  'healthBadge', 'workspaceButton', 'workspaceLabel', 'refreshButton', 'importCodexButton', 'newSessionButton', 'sessionList',
+  'healthBadge', 'workspaceButton', 'workspaceLabel', 'refreshButton', 'importCodexButton', 'importCursorButton', 'newSessionButton', 'sessionList',
   'addProviderButton', 'providerList', 'activeTitle', 'activeMeta', 'timelineModeSwitch', 'leaseBadge', 'approvalCount',
   'contractButton', 'timeline', 'providerSelect', 'composerText', 'checkpointButton', 'packetButton',
   'exportButton', 'sendButton', 'inspectorBody', 'modalBackdrop', 'modalTitle', 'modalForm',
@@ -335,7 +335,7 @@ function renderTimeline() {
     empty.append(node('h3', '', state.timelineMode === 'chat' ? '还没有会话消息' : '当前会话还没有事件'));
     empty.append(node('p', '', state.timelineMode === 'chat'
       ? '仅会话模式只显示用户与模型的对话。可切换到「完整轨迹」查看 Checkpoint、工具与审批。'
-      : '导入 Codex 或发送第一条指令后，事件会出现在这里。'));
+      : '导入 Codex / Cursor 或发送第一条指令后，事件会出现在这里。'));
     elements.timeline.append(empty);
     return;
   }
@@ -823,6 +823,71 @@ async function openCodexImportModal() {
   }
 }
 
+async function openCursorImportModal() {
+  setBusy(true);
+  try {
+    const data = await api('/api/cursor/sessions?limit=30');
+    const transcripts = data.transcripts || [];
+    elements.modalTitle.textContent = '导入本机 Cursor 会话';
+    elements.modalForm.replaceChildren();
+    elements.modalError.classList.add('hidden');
+    elements.modalSubmitButton.classList.add('hidden');
+
+    if (!transcripts.length) {
+      elements.modalForm.append(node('p', '', '未在 ' + (data.projectsRoot || '~/.cursor/projects') + ' 找到 agent-transcripts。'));
+    } else {
+      const hint = node('p', '', '选择一条 Cursor Agent 本地记录，RelayDock 会抽取用户提问与助手可见回复并创建会话（默认跳过 subagent）。');
+      hint.style.margin = '0 0 10px';
+      hint.style.color = 'var(--muted)';
+      hint.style.fontSize = '13px';
+      elements.modalForm.append(hint);
+      const list = node('div', 'codex-import-list');
+      for (const item of transcripts) {
+        const button = node('button', 'codex-import-item');
+        button.type = 'button';
+        button.append(node('strong', '', item.project || item.sessionId));
+        button.append(node('span', '', [
+          formatDate(item.mtime),
+          item.sessionId.slice(0, 8)
+        ].filter(Boolean).join(' · ')));
+        if (item.preview) button.append(node('span', '', item.preview));
+        button.addEventListener('click', async () => {
+          setBusy(true);
+          try {
+            const result = await api('/api/cursor/import', {
+              method: 'POST',
+              body: {
+                path: item.path,
+                maxMessages: 60,
+                createCheckpoint: true
+              }
+            });
+            closeModal();
+            await loadOverview(false);
+            await selectSession(result.session.id);
+            showToast('已导入 ' + result.imported.length + ' 条 Cursor 消息');
+          } catch (error) {
+            elements.modalError.textContent = error.message;
+            elements.modalError.classList.remove('hidden');
+            showToast(error.message, true);
+          } finally {
+            setBusy(false);
+          }
+        });
+        list.append(button);
+      }
+      elements.modalForm.append(list);
+    }
+
+    elements.modalBackdrop.classList.remove('hidden');
+    elements.modalBackdrop.setAttribute('aria-hidden', 'false');
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
 function pathTail(value) {
   const parts = String(value || '').replace(/\\/g, '/').split('/');
   return parts[parts.length - 1] || value;
@@ -902,6 +967,9 @@ function openProviderModal(provider) {
 
 elements.newSessionButton.addEventListener('click', openSessionModal);
 elements.importCodexButton.addEventListener('click', () => openCodexImportModal().catch((error) => showToast(error.message, true)));
+if (elements.importCursorButton) {
+  elements.importCursorButton.addEventListener('click', () => openCursorImportModal().catch((error) => showToast(error.message, true)));
+}
 elements.addProviderButton.addEventListener('click', () => openProviderModal(null));
 elements.refreshButton.addEventListener('click', () => refreshActive().catch((error) => showToast(error.message, true)));
 elements.contractButton.addEventListener('click', openContractModal);

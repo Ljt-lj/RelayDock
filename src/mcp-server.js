@@ -182,6 +182,28 @@ function tools() {
       },
       required: ['path'],
       additionalProperties: false
+    }),
+    tool('relaydock_cursor_list', 'List local Cursor agent transcripts from ~/.cursor/projects/*/agent-transcripts for import.', {
+      type: 'object',
+      properties: {
+        limit: { type: 'number' },
+        project: { type: 'string', description: 'Optional Cursor project slug filter' }
+      },
+      additionalProperties: false
+    }),
+    tool('relaydock_cursor_import', 'Import a local Cursor agent transcript into a RelayDock session (creates one if needed).', {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute transcript path, file name, or Cursor session uuid' },
+        sessionId: { type: 'string', description: 'Optional existing RelayDock session to append into' },
+        maxMessages: { type: 'number' },
+        title: { type: 'string' },
+        goal: { type: 'string' },
+        project: { type: 'string' },
+        createCheckpoint: { type: 'boolean' }
+      },
+      required: ['path'],
+      additionalProperties: false
     })
   ];
 }
@@ -263,6 +285,18 @@ async function callTool(service, name, args = {}) {
         maxMessages: args.maxMessages,
         title: args.title,
         goal: args.goal,
+        createCheckpoint: args.createCheckpoint
+      });
+    case 'relaydock_cursor_list':
+      return service.listCursorSessions({ limit: args.limit, project: args.project });
+    case 'relaydock_cursor_import':
+      return service.importCursorSession({
+        path: args.path,
+        sessionId: args.sessionId,
+        maxMessages: args.maxMessages,
+        title: args.title,
+        goal: args.goal,
+        project: args.project,
         createCheckpoint: args.createCheckpoint
       });
     default:

@@ -10,6 +10,11 @@ const {
   loadCodexRollout,
   resolveRolloutPath
 } = require('./codex-import');
+const {
+  listCursorTranscripts,
+  loadCursorTranscript,
+  resolveTranscriptPath
+} = require('./cursor-import');
 const { CredentialStore, ProviderStore, publicProvider, validateProvider } = require('./config');
 const { buildRelayPacket } = require('./context-compiler');
 const {
@@ -377,6 +382,109 @@ class RelayService {
       codexHome: input.codexHome,
       limit: input.limit
     });
+  }
+
+  async listCursorSessions(input = {}) {
+    await this.init();
+    return listCursorTranscripts({
+      cursorHome: input.cursorHome,
+      limit: input.limit,
+      project: input.project,
+      includeSubagents: input.includeSubagents
+    });
+  }
+
+  async importCursorSession(input = {}) {
+    await this.init();
+    const listed = await listCursorTranscripts({
+      cursorHome: input.cursorHome,
+      limit: 100,
+      project: input.project,
+      includeSubagents: input.includeSubagents
+    });
+    const filePath = resolveTranscriptPath(
+      input.path || input.transcript || input.cursorSessionId,
+      listed.transcripts
+    );
+    if (!filePath) throw serviceError('Cursor transcript not found', 'CURSOR_TRANSCRIPT_NOT_FOUND', 404);
+
+    const loaded = await loadCursorTranscript(filePath, {
+      maxMessages: input.maxMessages,
+      cursorHome: input.cursorHome
+    });
+    if (!loaded.messages.length) {
+      throw serviceError('No importable user/assistant messages found in this Cursor transcript', 'CURSOR_TRANSCRIPT_EMPTY');
+    }
+
+    let session;
+    if (input.sessionId) {
+      session = await this.getSession(input.sessionId);
+    } else {
+      session = await this.createSession({
+        title: String(input.title || loaded.title).slice(0, 160),
+        goal: String(input.goal || loaded.goal || '').slice(0, 4000),
+        originProvider: 'cursor',
+        summary: 'Imported from local Cursor transcript ' + path.basename(filePath)
+      });
+    }
+
+    const externalKey = String(input.externalKey || ('cursor:session:' + (loaded.sessionId || path.basename(filePath)))).slice(0, 240);
+    await this.bindExternalSession(externalKey, {
+      sessionId: session.id,
+      originProvider: 'cursor',
+      title: session.title
+    });
+
+    const imported = [];
+    for (const message of loaded.messages) {
+      const event = await this.recordMessage(session.id, {
+        role: message.role,
+        content: message.content,
+        originProvider: 'cursor',
+        messageId: 'cursor:' + message.messageId,
+        untrusted: message.role === 'assistant',
+        model: 'cursor'
+      });
+      imported.push({
+        messageId: event.payload.messageId,
+        role: event.payload.role,
+        eventId: event.event_id
+      });
+    }
+
+    let checkpoint = null;
+    if (input.createCheckpoint !== false) {
+      checkpoint = await this.createCheckpoint(session.id, {
+        summary: 'Imported Cursor conversation (' + imported.length + ' messages)',
+        originProvider: 'cursor',
+        actor: 'cursor-import'
+      });
+    }
+
+    await this.ledger.append(session.id, 'cursor.imported', {
+      path: filePath,
+      cursorSessionId: loaded.sessionId,
+      project: loaded.project,
+      externalKey,
+      importedCount: imported.length,
+      stats: loaded.stats
+    }, { originProvider: 'cursor', actor: 'cursor-import' });
+
+    return {
+      session: await this.getSession(session.id),
+      externalKey,
+      source: {
+        path: filePath,
+        cursorSessionId: loaded.sessionId,
+        project: loaded.project
+      },
+      imported,
+      stats: loaded.stats,
+      checkpoint: checkpoint ? {
+        checkpointId: checkpoint.checkpointId,
+        summary: checkpoint.summary
+      } : null
+    };
   }
 
   async importCodexSession(input = {}) {

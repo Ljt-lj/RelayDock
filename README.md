@@ -20,6 +20,7 @@ RelayDock 是一个面向本地编码 Agent 的接力工作台：把 Codex 中�
 - OpenAI 兼容 Model Gateway（`/v1`），可被 Codex / Cursor 当作模型端点；
 - stdio MCP 控制面，供三方平台显式记录会话证据与交接；
 - 从本机 `~/.codex/sessions` 导入 Codex rollout 到 Studio/CLI/MCP；
+- 从本机 `~/.cursor/projects/*/agent-transcripts` 导入 Cursor Agent 会话到 Studio/CLI/MCP；
 - 会话、消息、快照、Packet、模型回合、审批和导出 CLI；
 - 事件、Provider 和 Relay Packet JSON Schema；
 - 使用 Node.js 内置测试框架的自动化测试。

@@ -67,6 +67,8 @@ async function main() {
       '  workspace:set --path PATH',
       '  codex:list [--limit 30]',
       '  codex:import --rollout PATH|SESSION_ID [--session ID] [--max-messages 60]',
+      '  cursor:list [--limit 30] [--project SLUG]',
+      '  cursor:import --transcript PATH|SESSION_ID [--session ID] [--max-messages 60]',
       '',
       'Bridge modes:',
       '  mcp   stdio MCP control plane for Codex/Cursor',
@@ -156,6 +158,26 @@ async function main() {
       maxMessages: Number(flags['max-messages']) || 60,
       title: flags.title,
       goal: flags.goal,
+      createCheckpoint: flags['no-checkpoint'] ? false : true
+    }));
+  }
+  if (command === 'cursor:list') {
+    return print(await service.listCursorSessions({
+      limit: Number(flags.limit) || 30,
+      project: flags.project || undefined
+    }));
+  }
+  if (command === 'cursor:import') {
+    if (!flags.transcript && !flags.path && !flags['session-id']) {
+      throw new Error('--transcript PATH|SESSION_ID is required');
+    }
+    return print(await service.importCursorSession({
+      path: flags.transcript || flags.path || flags['session-id'],
+      sessionId: flags.session || undefined,
+      maxMessages: Number(flags['max-messages']) || 60,
+      title: flags.title,
+      goal: flags.goal,
+      project: flags.project || undefined,
       createCheckpoint: flags['no-checkpoint'] ? false : true
     }));
   }

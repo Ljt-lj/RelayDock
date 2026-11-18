@@ -54,6 +54,8 @@ Requests with an Origin header must be same-origin. The server rejects cross-ori
 | GET | /v1/responses/:id | Read a recently bridged Responses result |
 | GET | /api/codex/sessions | List local Codex rollout files under ~/.codex/sessions |
 | POST | /api/codex/import | Import a Codex rollout into a RelayDock session |
+| GET | /api/cursor/sessions | List local Cursor agent transcripts under ~/.cursor/projects |
+| POST | /api/cursor/import | Import a Cursor agent transcript into a RelayDock session |
 | GET | /api/workspace | Current workspace, data directory, and recent workspaces |
 | PUT | /api/workspace | Switch the active file/Git workspace (`{ "path": "..." }`) |
 

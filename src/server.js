@@ -255,6 +255,18 @@ async function createRelayServer(options = {}) {
         return sendJson(response, 201, await service.importCodexSession(await readJsonBody(request)));
       }
 
+      if (pathname === '/api/cursor/sessions' && request.method === 'GET') {
+        return sendJson(response, 200, await service.listCursorSessions({
+          limit: Number(url.searchParams.get('limit')) || 30,
+          cursorHome: url.searchParams.get('cursorHome') || undefined,
+          project: url.searchParams.get('project') || undefined,
+          includeSubagents: url.searchParams.get('includeSubagents') === '1'
+        }));
+      }
+      if (pathname === '/api/cursor/import' && request.method === 'POST') {
+        return sendJson(response, 201, await service.importCursorSession(await readJsonBody(request)));
+      }
+
       if (pathname.startsWith('/api/')) {
         return sendJson(response, 404, { error: { code: 'NOT_FOUND', message: 'API endpoint not found' } });
       }

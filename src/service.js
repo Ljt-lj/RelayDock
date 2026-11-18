@@ -17,6 +17,7 @@ const {
 } = require('./cursor-import');
 const { CredentialStore, ProviderStore, publicProvider, validateProvider } = require('./config');
 const { buildRelayPacket } = require('./context-compiler');
+const { renderHandoffMarkdown } = require('./handoff-export');
 const {
   messageText,
   openaiChatResponse,
@@ -26,7 +27,6 @@ const {
 const { Ledger } = require('./ledger');
 const { OpenAICompatibleProvider, ProviderError } = require('./provider');
 const {
-  effectiveConstraints,
   normalizeCompleteTaskFirst,
   normalizeMaxSteps,
   taskPolicyFromContract,
@@ -1808,44 +1808,8 @@ class RelayService {
   async exportSession(sessionId, format = 'markdown') {
     const session = await this.getSession(sessionId);
     const events = await this.ledger.timeline(sessionId);
-    if (format === 'json') {
-      return { session, events };
-    }
-    const lines = [
-      '# RelayDock session export',
-      '',
-      '- Session: ' + session.id,
-      '- Title: ' + session.title,
-      '- Workspace: ' + session.workspace,
-      '- Exported: ' + new Date().toISOString(),
-      '',
-      '## Task contract',
-      '',
-      '- Goal: ' + (session.contract.goal || '(not recorded)'),
-      '- Summary: ' + (session.contract.summary || '(not recorded)'),
-      '- Completion-first: ' + (taskPolicyFromContract(session.contract).completeTaskFirst ? 'enabled' : 'disabled'),
-      '- Tool-step budget: ' + taskPolicyFromContract(session.contract).maxSteps,
-      '',
-      'Constraints:',
-      ...(effectiveConstraints(session.contract).length ? effectiveConstraints(session.contract).map((item) => '- ' + item) : ['- None recorded']),
-      '',
-      '## Unified timeline',
-      ''
-    ];
-    for (const event of events) {
-      if (['write_lease.acquired', 'write_lease.released', 'packet.previewed'].includes(event.type)) continue;
-      const payload = event.payload || {};
-      lines.push('### #' + event.sequence + ' · ' + event.type + ' · ' + event.origin_provider);
-      if (event.type === 'message.created') {
-        lines.push('', 'Role: ' + payload.role + (payload.untrusted ? ' (untrusted evidence)' : ''), '', String(payload.content || ''));
-      } else if (event.type === 'checkpoint.created') {
-        lines.push('', 'Checkpoint: ' + payload.checkpointId, 'Summary: ' + (payload.summary || ''), 'Blob: ' + payload.blobRef);
-      } else if (event.type.startsWith('tool.') || event.type.startsWith('handoff.') || event.type.startsWith('approval.') || event.type === 'provider.error' || event.type === 'file.changed') {
-        lines.push('', JSON.stringify(redactDeep(payload, this.credentials.allSecrets()), null, 2));
-      }
-      lines.push('', '---', '');
-    }
-    return lines.join('\n');
+    if (format === 'json') return { session, events };
+    return renderHandoffMarkdown(session, events);
   }
 }
 

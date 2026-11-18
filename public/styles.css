@@ -504,8 +504,28 @@ h1, h2, h3, p { margin-top: 0; }
 .event-source.external { background: var(--purple-soft); color: #62418f; }
 .event-source.approval { background: var(--amber-soft); color: #8a4b08; }
 .event-time { color: #8b978f; font-size: 10px; white-space: nowrap; }
-.event-content { color: #29372f; font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-content { color: #29372f; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.event-content p { margin: 0 0 8px; }
+.event-content p:last-child,
+.event-content ul:last-child,
+.event-content ol:last-child,
+.event-content pre:last-child { margin-bottom: 0; }
+.event-content h1,
+.event-content h2,
+.event-content h3 { margin: 0 0 6px; font-size: 14px; line-height: 1.4; }
+.event-content ul,
+.event-content ol { margin: 0 0 8px; padding-left: 1.2em; }
+.event-content pre {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f1f4f1;
+  overflow: auto;
+  font: 12px/1.55 Consolas, monospace;
+  white-space: pre-wrap;
+}
 .event-content code { background: #edf1ed; padding: 1px 4px; border-radius: 3px; }
+.event-content pre code { background: transparent; padding: 0; }
 .event-summary { color: var(--muted); font-size: 12px; line-height: 1.55; }
 .event-tags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .event-tag { border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; color: var(--muted); font-size: 9px; }

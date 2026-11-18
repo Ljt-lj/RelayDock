@@ -45,7 +45,7 @@ Codex Skill / CLI                 RelayDock Studio
                    DeepSeek / compatible API
 ~~~
 
-RelayDock 是独立 Sidecar。它不会劫持 Codex 的内部请求，也不会自动读取 Codex 私有会话历史。Codex 侧通过 Skill、CLI 或本地 API 显式记录关键消息、任务契约和 Checkpoint；DeepSeek 侧通过 RelayDock 进入同一账本。完成后可导出 Markdown 或 JSON 回到 Codex。
+RelayDock 是独立 Sidecar。它不会劫持 Codex 的内部请求，也不会自动读取 Codex 私有会话历史。Codex 侧通过 Skill、CLI 或本地 API 显式记录关键消息、任务契约和 Checkpoint；DeepSeek 侧通过 RelayDock 进入同一账本。完成后可导出 Markdown 或 JSON 回到 Codex。Markdown 是交接说明：任务、本会话改过的文件、对话结论和工具名称；工具读到的文件原文留在 JSON 导出里。
 
 ## 环境要求
 
